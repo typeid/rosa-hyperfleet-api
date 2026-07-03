@@ -11,10 +11,6 @@ import (
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/spf13/cobra"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	ctrl "sigs.k8s.io/controller-runtime"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/rosa-regional-platform-api/pkg/clients/fleetdb"
 	"github.com/openshift/rosa-regional-platform-api/pkg/config"
@@ -23,10 +19,9 @@ import (
 
 var (
 	// Config flags
-	logLevel           string
-	logFormat          string
-	fleetDBClusterName string
-	allowedAccounts    string
+	logLevel        string
+	logFormat       string
+	allowedAccounts string
 	dynamodbRegion     string
 	dynamodbPrefix     string
 	oidcIssuerBaseURL  string
@@ -58,7 +53,6 @@ func init() {
 	serveCmd.Flags().StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
 	serveCmd.Flags().StringVar(&logFormat, "log-format", "json", "Log format (json, text)")
 	serveCmd.Flags().StringVar(&allowedAccounts, "allowed-accounts", "", "Comma-separated list of allowed AWS account IDs")
-	serveCmd.Flags().StringVar(&fleetDBClusterName, "fleet-db-cluster-name", "", "EKS cluster name for fleet-db")
 	serveCmd.Flags().StringVar(&dynamodbRegion, "dynamodb-region", "", "AWS region for DynamoDB (defaults to auto-detected region)")
 	serveCmd.Flags().StringVar(&dynamodbPrefix, "dynamodb-prefix", "rosa", "Prefix for DynamoDB table names (default: rosa)")
 	serveCmd.Flags().StringVar(&oidcIssuerBaseURL, "oidc-issuer-base-url", "", "Base URL for OIDC issuer (e.g. https://<cloudfront-domain>)")
@@ -92,11 +86,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 	cfg := config.NewConfig()
 	cfg.Logging.Level = logLevel
 	cfg.Logging.Format = logFormat
-	if fleetDBClusterName == "" {
-		return fmt.Errorf("--fleet-db-cluster-name is required")
+	dsn := os.Getenv("FLEETSTORE_DSN")
+	if dsn == "" {
+		return fmt.Errorf("FLEETSTORE_DSN environment variable is required")
 	}
-	cfg.FleetDB.ClusterName = fleetDBClusterName
-	cfg.FleetDB.AWSRegion = awsCfg.Region
+	cfg.FleetDB.DSN = dsn
 
 	cfg.Regional.OIDCIssuerBaseURL = oidcIssuerBaseURL
 	cfg.AllowedAccounts = parseAllowedAccounts(allowedAccounts)
@@ -170,23 +164,15 @@ func runServe(cmd *cobra.Command, args []string) error {
 		)
 	}
 
-	// Create fleet-db client (reuses awsCfg from region detection above)
-	fleetDBClient, err := fleetdb.NewClient(context.Background(), awsCfg, cfg.FleetDB.ClusterName, logger)
+	// Create FleetStore client (Postgres)
+	fleetDBClient, err := fleetdb.NewClient(context.Background(), cfg.FleetDB.DSN, logger)
 	if err != nil {
-		return fmt.Errorf("failed to create fleet-db client: %w", err)
+		return fmt.Errorf("failed to create fleetstore client: %w", err)
 	}
-
-	// Create in-cluster client for the RC (local cluster) — used by MC handler
-	// to manage the hyperfleet-mc-config ConfigMap.
-	scheme := runtime.NewScheme()
-	_ = corev1.AddToScheme(scheme)
-	rcClient, err := ctrlclient.New(ctrl.GetConfigOrDie(), ctrlclient.Options{Scheme: scheme})
-	if err != nil {
-		return fmt.Errorf("failed to create RC in-cluster client: %w", err)
-	}
+	defer fleetDBClient.Close()
 
 	// Create server
-	srv, err := server.New(cfg, fleetDBClient, rcClient, logger)
+	srv, err := server.New(cfg, fleetDBClient, logger)
 	if err != nil {
 		return fmt.Errorf("failed to create server: %w", err)
 	}
@@ -200,8 +186,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		"api_port", cfg.Server.APIPort,
 		"health_port", cfg.Server.HealthPort,
 		"metrics_port", cfg.Server.MetricsPort,
-		"fleet_db_cluster", cfg.FleetDB.ClusterName,
-		"aws_region", cfg.FleetDB.AWSRegion,
+		"aws_region", awsCfg.Region,
 		"allowed_accounts_count", len(cfg.AllowedAccounts),
 	)
 

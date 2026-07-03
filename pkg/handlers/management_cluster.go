@@ -1,33 +1,30 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"log/slog"
 	"net/http"
 
 	"github.com/gorilla/mux"
-	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/yaml"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/openshift/rosa-regional-platform-api/pkg/clients/fleetdb"
 	"github.com/openshift/rosa-regional-platform-api/pkg/middleware"
 )
 
-const (
-	mcConfigMapName      = "management-clusters"
-	mcConfigMapNamespace = "platform-api"
-	mcConfigMapKey       = "clusters.yaml"
-)
+// ManagementClusterSpec is the spec stored in the resources table for ManagementCluster.
+type ManagementClusterSpec struct {
+	Region    string `json:"region"`
+	AccountID string `json:"accountId"`
+}
 
 // ManagementCluster represents a registered management cluster.
 type ManagementCluster struct {
-	ID        string `json:"id" yaml:"id"`
-	Region    string `json:"region" yaml:"region"`
-	AccountID string `json:"accountId" yaml:"accountId"`
+	ID        string `json:"id"`
+	Region    string `json:"region"`
+	AccountID string `json:"accountId"`
 }
 
 // ManagementClusterCreateRequest is the request body for creating an MC registration.
@@ -38,18 +35,17 @@ type ManagementClusterCreateRequest struct {
 }
 
 // ManagementClusterHandler handles management cluster endpoints.
-// It reads and writes the MC ConfigMap on the local (RC) cluster.
+// It reads and writes ManagementCluster resources in FleetStore (Postgres).
 type ManagementClusterHandler struct {
-	rcClient client.Client
-	logger   *slog.Logger
+	fleetDB *fleetdb.Client
+	logger  *slog.Logger
 }
 
 // NewManagementClusterHandler creates a new ManagementClusterHandler.
-// rcClient must point at the Regional Cluster (where the platform API runs).
-func NewManagementClusterHandler(rcClient client.Client, logger *slog.Logger) *ManagementClusterHandler {
+func NewManagementClusterHandler(fleetDB *fleetdb.Client, logger *slog.Logger) *ManagementClusterHandler {
 	return &ManagementClusterHandler{
-		rcClient: rcClient,
-		logger:   logger,
+		fleetDB: fleetDB,
+		logger:  logger,
 	}
 }
 
@@ -73,31 +69,37 @@ func (h *ManagementClusterHandler) Create(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	clusters, cm, err := h.loadMCConfig(ctx)
+	spec := ManagementClusterSpec{
+		Region:    req.Region,
+		AccountID: req.AccountID,
+	}
+	specJSON, err := json.Marshal(spec)
 	if err != nil {
-		h.logger.Error("failed to load MC config", "error", err)
-		h.writeError(w, http.StatusInternalServerError, "config-error", "Failed to load management cluster config")
+		h.logger.Error("failed to marshal management cluster spec", "error", err)
+		h.writeError(w, http.StatusInternalServerError, "marshal-error", "Failed to process management cluster data")
 		return
 	}
 
-	for _, mc := range clusters {
-		if mc.ID == req.ID {
+	_, err = h.fleetDB.DB().Exec(ctx,
+		`INSERT INTO resources (kind, namespace, name, spec)
+		 VALUES ('ManagementCluster', '_', $1, $2)`,
+		req.ID, specJSON,
+	)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			h.writeError(w, http.StatusConflict, "already-exists", "Management cluster already registered: "+req.ID)
 			return
 		}
+		h.logger.Error("failed to create management cluster", "error", err)
+		h.writeError(w, http.StatusInternalServerError, "config-error", "Failed to save management cluster config")
+		return
 	}
 
 	mc := ManagementCluster{
 		ID:        req.ID,
 		Region:    req.Region,
 		AccountID: req.AccountID,
-	}
-	clusters = append(clusters, mc)
-
-	if err := h.saveMCConfig(ctx, cm, clusters); err != nil {
-		h.logger.Error("failed to save MC config", "error", err)
-		h.writeError(w, http.StatusInternalServerError, "config-error", "Failed to save management cluster config")
-		return
 	}
 
 	h.logger.Info("management cluster created", "id", mc.ID, "account_id", accountID)
@@ -114,9 +116,39 @@ func (h *ManagementClusterHandler) List(w http.ResponseWriter, r *http.Request) 
 
 	h.logger.Debug("listing management clusters", "account_id", accountID)
 
-	clusters, _, err := h.loadMCConfig(ctx)
+	rows, err := h.fleetDB.DB().Query(ctx,
+		`SELECT name, spec FROM resources
+		 WHERE kind = 'ManagementCluster' AND deleted_at IS NULL`,
+	)
 	if err != nil {
-		h.logger.Error("failed to load MC config", "error", err)
+		h.logger.Error("failed to list management clusters", "error", err)
+		h.writeError(w, http.StatusInternalServerError, "config-error", "Failed to load management cluster config")
+		return
+	}
+	defer rows.Close()
+
+	var clusters []ManagementCluster
+	for rows.Next() {
+		var name string
+		var specJSON []byte
+		if err := rows.Scan(&name, &specJSON); err != nil {
+			h.logger.Error("failed to scan management cluster row", "error", err)
+			h.writeError(w, http.StatusInternalServerError, "config-error", "Failed to load management cluster config")
+			return
+		}
+		var spec ManagementClusterSpec
+		if err := json.Unmarshal(specJSON, &spec); err != nil {
+			h.logger.Error("failed to unmarshal management cluster spec", "name", name, "error", err)
+			continue
+		}
+		clusters = append(clusters, ManagementCluster{
+			ID:        name,
+			Region:    spec.Region,
+			AccountID: spec.AccountID,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		h.logger.Error("failed to iterate management clusters", "error", err)
 		h.writeError(w, http.StatusInternalServerError, "config-error", "Failed to load management cluster config")
 		return
 	}
@@ -140,69 +172,39 @@ func (h *ManagementClusterHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.Debug("getting management cluster", "id", id, "account_id", accountID)
 
-	clusters, _, err := h.loadMCConfig(ctx)
+	var specJSON []byte
+	err := h.fleetDB.DB().QueryRow(ctx,
+		`SELECT spec FROM resources
+		 WHERE kind = 'ManagementCluster' AND namespace = '_' AND name = $1 AND deleted_at IS NULL`,
+		id,
+	).Scan(&specJSON)
 	if err != nil {
-		h.logger.Error("failed to load MC config", "error", err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			h.writeError(w, http.StatusNotFound, "not-found", "Management cluster not found")
+			return
+		}
+		h.logger.Error("failed to get management cluster", "error", err, "id", id)
 		h.writeError(w, http.StatusInternalServerError, "config-error", "Failed to load management cluster config")
 		return
 	}
 
-	for _, mc := range clusters {
-		if mc.ID == id {
-			h.logger.Debug("management cluster retrieved", "id", mc.ID, "account_id", accountID)
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(mc)
-			return
-		}
+	var spec ManagementClusterSpec
+	if err := json.Unmarshal(specJSON, &spec); err != nil {
+		h.logger.Error("failed to unmarshal management cluster spec", "error", err, "id", id)
+		h.writeError(w, http.StatusInternalServerError, "config-error", "Failed to parse management cluster data")
+		return
 	}
 
-	h.writeError(w, http.StatusNotFound, "not-found", "Management cluster not found")
-}
-
-func (h *ManagementClusterHandler) loadMCConfig(ctx context.Context) ([]ManagementCluster, *corev1.ConfigMap, error) {
-	var cm corev1.ConfigMap
-	key := client.ObjectKey{Namespace: mcConfigMapNamespace, Name: mcConfigMapName}
-	if err := h.rcClient.Get(ctx, key, &cm); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, nil, nil
-		}
-		return nil, nil, fmt.Errorf("get mc configmap: %w", err)
+	mc := ManagementCluster{
+		ID:        id,
+		Region:    spec.Region,
+		AccountID: spec.AccountID,
 	}
 
-	data, ok := cm.Data[mcConfigMapKey]
-	if !ok || data == "" {
-		return nil, &cm, nil
-	}
+	h.logger.Debug("management cluster retrieved", "id", mc.ID, "account_id", accountID)
 
-	var clusters []ManagementCluster
-	if err := yaml.Unmarshal([]byte(data), &clusters); err != nil {
-		return nil, &cm, fmt.Errorf("parse mc config: %w", err)
-	}
-
-	return clusters, &cm, nil
-}
-
-func (h *ManagementClusterHandler) saveMCConfig(ctx context.Context, existing *corev1.ConfigMap, clusters []ManagementCluster) error {
-	yamlData, err := yaml.Marshal(clusters)
-	if err != nil {
-		return fmt.Errorf("marshal mc config: %w", err)
-	}
-
-	if existing == nil {
-		cm := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      mcConfigMapName,
-				Namespace: mcConfigMapNamespace,
-			},
-			Data: map[string]string{
-				mcConfigMapKey: string(yamlData),
-			},
-		}
-		return h.rcClient.Create(ctx, cm)
-	}
-
-	existing.Data[mcConfigMapKey] = string(yamlData)
-	return h.rcClient.Update(ctx, existing)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(mc)
 }
 
 func (h *ManagementClusterHandler) writeError(w http.ResponseWriter, status int, code, reason string) {

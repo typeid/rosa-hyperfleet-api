@@ -17,8 +17,7 @@ type Config struct {
 }
 
 type FleetDBConfig struct {
-	ClusterName string
-	AWSRegion   string
+	DSN string
 }
 
 type RegionalConfig struct {

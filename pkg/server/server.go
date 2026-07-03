@@ -11,8 +11,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
-
 	"github.com/openshift/rosa-regional-platform-api/pkg/authz"
 	"github.com/openshift/rosa-regional-platform-api/pkg/authz/client"
 	"github.com/openshift/rosa-regional-platform-api/pkg/clients/fleetdb"
@@ -34,15 +32,14 @@ type Server struct {
 }
 
 // New creates a new Server instance. The fleetDBClient is used by cluster,
-// nodepool, and ZOA handlers. The rcClient points at the local RC cluster
-// and is used by the management cluster handler for ConfigMap CRUD.
-func New(cfg *config.Config, fleetDBClient *fleetdb.Client, rcClient ctrlclient.Client, logger *slog.Logger) (*Server, error) {
+// nodepool, management cluster, and ZOA handlers.
+func New(cfg *config.Config, fleetDBClient *fleetdb.Client, logger *slog.Logger) (*Server, error) {
 	ctx := context.Background()
 
 	// Create handlers
 	healthHandler := apphandlers.NewHealthHandler()
 	infoHandler := apphandlers.NewInfoHandler()
-	mgmtClusterHandler := apphandlers.NewManagementClusterHandler(rcClient, logger)
+	mgmtClusterHandler := apphandlers.NewManagementClusterHandler(fleetDBClient, logger)
 	clusterHandler := apphandlers.NewClusterHandler(fleetDBClient, cfg.Regional.OIDCIssuerBaseURL, logger)
 	nodePoolHandler := apphandlers.NewNodePoolHandler(fleetDBClient, logger)
 
