@@ -9,11 +9,9 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/typeid/hyperfleet-operator/api/bucket"
 	hyperfleetv1alpha1 "github.com/typeid/hyperfleet-operator/api/v1alpha1"
 )
 
@@ -27,26 +25,16 @@ type Client struct {
 }
 
 // NewClient creates a Client backed by pgruntime.NewClient.
-// bucketCount must match the operator's BUCKET_COUNT to ensure resources are
-// written to the correct bucket for the operator's watchers.
-func NewClient(ctx context.Context, dsn string, bucketCount int, logger *slog.Logger) (*Client, error) {
+// The direct client is never sharded and sees all data.
+func NewClient(ctx context.Context, dsn string, logger *slog.Logger) (*Client, error) {
 	scheme := runtime.NewScheme()
 	if err := hyperfleetv1alpha1.AddToScheme(scheme); err != nil {
 		return nil, fmt.Errorf("register hyperfleet scheme: %w", err)
 	}
 
-	if bucketCount <= 0 {
-		bucketCount = 1
-	}
-
 	c, cleanup, err := pgruntime.NewClient(pgruntime.Options{
-		Scheme:         scheme,
-		DSN:            dsn,
-		BucketIDs:      bucket.All(bucketCount),
-		BucketAssigner: bucket.Assigner(bucketCount),
-		UnshardedGVKs: []schema.GroupVersionKind{
-			hyperfleetv1alpha1.SchemeGroupVersion.WithKind("ManagementCluster"),
-		},
+		Scheme: scheme,
+		DSN:    dsn,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create pgruntime client: %w", err)
