@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 
@@ -166,13 +165,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create hyperfleet DB client (Postgres via pgruntime)
-	bucketCount := 1
-	if s := os.Getenv("BUCKET_COUNT"); s != "" {
-		if n, err := strconv.Atoi(s); err == nil && n > 0 {
-			bucketCount = n
-		}
-	}
-	dbClient, err := hyperfleetdb.NewClient(context.Background(), cfg.DB.DSN, bucketCount, logger)
+	dbClient, err := hyperfleetdb.NewClient(context.Background(), cfg.DB.DSN, logger)
 	if err != nil {
 		return fmt.Errorf("failed to create hyperfleetdb client: %w", err)
 	}
