@@ -1,6 +1,6 @@
 module github.com/openshift/rosa-regional-platform-api
 
-go 1.26.4
+go 1.26.3
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.42.0
@@ -12,7 +12,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/verifiedpermissions v1.24.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
-	github.com/jmelis/postgres-controller-backend v0.0.0-20260720102648-72e89594aaaf
+	github.com/jmelis/postgres-controller-backend v0.0.0-20260721150910-ccd8a96693ce
 	github.com/onsi/ginkgo/v2 v2.28.1
 	github.com/onsi/gomega v1.39.1
 	github.com/openshift/hypershift/api v0.0.0-20260625052409-9acec4759a16
