@@ -1,0 +1,5 @@
+FROM nested-podman
+COPY src/ /opt/app-root/src
+WORKDIR /opt/app-root/src/rosa-hyperfleet-api
+USER root
+RUN dnf install -y git make gcc go --setopt=install_weak_deps=False && dnf clean all
