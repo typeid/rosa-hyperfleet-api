@@ -826,9 +826,7 @@ var _ = Describe("ROSACTL CLI E2E Tests", Ordered, func() {
 	It("should be able to delete the cluster-oidc", Label("oidc-delete", "cleanup"), func() {
 		defer recordTiming("hcp-oidc-delete")()
 		if os.Getenv("ROSA_REGIONAL_TEARDOWN_FIRE_AND_FORGET") == "true" {
-			GinkgoWriter.Printf("Fire-and-forget mode: launching async deletes for all infra stacks\n")
-			fireAndForgetInfraDelete(ROSACTL_BIN, clusterName, region, []string{"cluster-oidc", "cluster-vpc", "cluster-iam"})
-			cleanupCompleted = true
+			fireAndForgetInfraDelete(ROSACTL_BIN, clusterName, region, []string{"cluster-oidc"})
 			return
 		}
 		GinkgoWriter.Printf("Deleting the cluster-oidc: %s\n", clusterName)
@@ -844,8 +842,9 @@ var _ = Describe("ROSACTL CLI E2E Tests", Ordered, func() {
 	// Delete cluster-vpc with up to 3 attempts; fail the spec if all attempts return an error.
 	It("should be able to try to delete the cluster-vpc, trying 3 times", Label("vpc-delete", "cleanup"), func() {
 		defer recordTiming("hcp-vpc-delete")()
-		if cleanupCompleted {
-			Skip("fire-and-forget cleanup already launched all stacks")
+		if os.Getenv("ROSA_REGIONAL_TEARDOWN_FIRE_AND_FORGET") == "true" {
+			fireAndForgetInfraDelete(ROSACTL_BIN, clusterName, region, []string{"cluster-vpc"})
+			return
 		}
 		const maxAttempts = 3
 		const backoffBetweenAttempts = 5 * time.Minute
@@ -887,8 +886,10 @@ var _ = Describe("ROSACTL CLI E2E Tests", Ordered, func() {
 
 	It("should be able to delete the cluster-iam", Label("iam-delete", "cleanup"), func() {
 		defer recordTiming("hcp-iam-delete")()
-		if cleanupCompleted {
-			Skip("fire-and-forget cleanup already launched all stacks")
+		if os.Getenv("ROSA_REGIONAL_TEARDOWN_FIRE_AND_FORGET") == "true" {
+			fireAndForgetInfraDelete(ROSACTL_BIN, clusterName, region, []string{"cluster-iam"})
+			cleanupCompleted = true
+			return
 		}
 		GinkgoWriter.Printf("Deleting the cluster-iam: %s\n", clusterName)
 		cmd := exec.Command(ROSACTL_BIN, "cluster-iam", "delete", clusterName, "--region", region)
