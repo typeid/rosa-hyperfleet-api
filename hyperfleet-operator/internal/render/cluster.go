@@ -249,6 +249,9 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, h4, zoneDomain string) R
 					hypershiftv1beta1.PodSecurityAdmissionLabelOverrideAnnotation: "privileged",
 					hypershiftv1beta1.ControlPlaneOperatorImageAnnotation:         "quay.io/cbusse_openshift/control-plane-operator:4.23-iam-auth",
 					"hypershift.openshift.io/aws-iam-authenticator":               "true",
+					// TODO: use hypershiftv1beta1.TopologyAnnotation and KataRequestServingComponentsTopology
+					// once the HyperShift API changes are published
+					"hypershift.openshift.io/topology": "kata-request-serving-components",
 				},
 			},
 			Spec: *hcSpec,
