@@ -22,7 +22,7 @@ func NodePoolResource(nodePool *hyperfleetv1alpha1.NodePool, cluster *hyperfleet
 		return Resource{}, fmt.Errorf("converting NodePoolSpec for nodepool %s/%s: %w", ns, npName, err)
 	}
 	npSpec.ClusterName = clusterName
-	npSpec.Release.Image = "quay.io/openshift-release-dev/ocp-release:5.0.0-ec.2-multi"
+	npSpec.Release.Image = "quay.io/openshift-release-dev/ocp-release:5.0.0-ec.5-multi"
 
 	if npSpec.Management.UpgradeType == "" {
 		npSpec.Management.UpgradeType = hypershiftv1beta1.UpgradeTypeReplace
