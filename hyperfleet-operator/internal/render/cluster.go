@@ -247,6 +247,10 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, oidcSigningKeyExternal b
 	} else {
 		hcSpec.Configuration.APIServer = apiServerConfiguration().APIServer
 	}
+	ingressDomain := fmt.Sprintf("apps.in.%s.%s", clusterName, baseDomain)
+	hcSpec.Configuration.Ingress = &configv1.IngressSpec{
+		Domain: ingressDomain,
+	}
 
 	// --- Defaults (only set if customer didn't specify) ---
 	if hcSpec.Etcd.ManagementType == "" {
@@ -293,6 +297,8 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, oidcSigningKeyExternal b
 	annotations := map[string]string{
 		hypershiftv1beta1.PodSecurityAdmissionLabelOverrideAnnotation: "privileged",
 		hypershiftv1beta1.CleanupCloudResourcesAnnotation:             "true",
+		"hypershift.openshift.io/aws-iam-authenticator":               "true",
+		hypershiftv1beta1.ManagedIngressDNSAnnotation:                 "true",
 	}
 	// Development override: pin the control-plane-operator image so hosted
 	// clusters run a chosen CPO build (e.g. from an openshift/hypershift PR).
