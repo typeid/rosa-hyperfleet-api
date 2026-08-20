@@ -35,6 +35,7 @@ func ClusterResources(cluster *hyperfleetv1alpha1.Cluster, oidcSigningKeyExterna
 		clusterConfig(clusterID, clusterName, ns),
 		pullSecret(clusterID, ns),
 		apiServingCert(clusterID, clusterName, baseDomain, ns),
+		ingressServingCert(clusterID, clusterName, baseDomain, ns),
 		hc,
 		sshKey(clusterID, ns),
 	}
@@ -214,6 +215,33 @@ func extractUUIDFromIssuerURL(issuerURL string) string {
 		return lastSegment
 	}
 	return ""
+}
+
+func ingressServingCert(clusterID, clusterName, baseDomain, ns string) Resource {
+	return Resource{
+		Group: "cert-manager.io", Version: "v1", Resource: "certificates",
+		Name: "ingress-serving-cert", Namespace: ns,
+		Object: &Certificate{
+			TypeMeta: metav1.TypeMeta{APIVersion: "cert-manager.io/v1", Kind: "Certificate"},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "ingress-serving-cert",
+				Namespace: ns,
+				Labels: map[string]string{
+					"hyperfleet.io/cluster-id": clusterID,
+				},
+			},
+			Spec: CertificateSpec{
+				SecretName: "ingress-serving-cert",
+				IssuerRef: CertificateIssuerRef{
+					Name: "letsencrypt-dns01",
+					Kind: "ClusterIssuer",
+				},
+				DNSNames: []string{
+					fmt.Sprintf("*.apps.in.%s.%s", clusterName, baseDomain),
+				},
+			},
+		},
+	}
 }
 
 func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, oidcSigningKeyExternal bool, baseDomain, controlPlaneOperatorImage string) (Resource, error) {
