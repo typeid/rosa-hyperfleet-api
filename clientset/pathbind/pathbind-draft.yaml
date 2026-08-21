@@ -209,6 +209,16 @@ resources:
               operations:
                 - create
                 - update
+            - path: spec.hostedCluster.platform.aws.managedDNS.delegation.nsDelegation
+              goType: string
+              operations:
+                - create
+                - update
+            - path: spec.hostedCluster.platform.aws.managedDNS.ingressDomainPrefix
+              goType: string
+              operations:
+                - create
+                - update
             - path: spec.hostedCluster.platform.aws.multiArch
               goType: boolean
               operations:
@@ -359,6 +369,11 @@ resources:
                 - create
                 - update
             - path: spec.nodePool.platform.aws.ami
+              goType: string
+              operations:
+                - create
+                - update
+            - path: spec.nodePool.platform.aws.cpuOptions.nestedVirtualizationPolicy
               goType: string
               operations:
                 - create

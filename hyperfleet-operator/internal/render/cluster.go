@@ -312,7 +312,7 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, oidcSigningKeyExternal b
 	// --- Platform overrides ---
 	if hcSpec.Platform.AWS != nil {
 		hcSpec.Platform.AWS.EndpointAccess = hypershiftv1beta1.PublicAndPrivate
-		hcSpec.Platform.AWS.ResourceTags = appendSystemTags(hcSpec.Platform.AWS.ResourceTags, clusterID)
+		hcSpec.Platform.AWS.ResourceTags = appendClusterSystemTags(hcSpec.Platform.AWS.ResourceTags, clusterID)
 		hcSpec.Platform.AWS.ManagedDNS = &hypershiftv1beta1.AWSManagedDNSSpec{
 			IngressDomainPrefix: "in",
 			Delegation: hypershiftv1beta1.AWSManagedDNSDelegationSpec{
@@ -331,6 +331,7 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, oidcSigningKeyExternal b
 	annotations := map[string]string{
 		hypershiftv1beta1.PodSecurityAdmissionLabelOverrideAnnotation: "privileged",
 		hypershiftv1beta1.CleanupCloudResourcesAnnotation:             "true",
+		hypershiftv1beta1.SkipReleaseImageValidation:                  "true",
 		"hypershift.openshift.io/aws-iam-authenticator":               "true",
 	}
 	// Development override: pin the control-plane-operator image so hosted
@@ -423,14 +424,21 @@ func defaultEtcdSpec() hypershiftv1beta1.EtcdSpec {
 	}
 }
 
-func appendSystemTags(existing []hypershiftv1beta1.AWSResourceTag, clusterID string) []hypershiftv1beta1.AWSResourceTag {
-	tags := []hypershiftv1beta1.AWSResourceTag{
+func appendClusterSystemTags(existing []hypershiftv1beta1.AWSClusterResourceTag, clusterID string) []hypershiftv1beta1.AWSClusterResourceTag {
+	tags := []hypershiftv1beta1.AWSClusterResourceTag{
 		{Key: "red-hat-managed", Value: "true"},
 	}
 	if clusterID != "" {
-		tags = append(tags, hypershiftv1beta1.AWSResourceTag{
+		tags = append(tags, hypershiftv1beta1.AWSClusterResourceTag{
 			Key: fmt.Sprintf("kubernetes.io/cluster/%s", clusterID), Value: "owned",
 		})
+	}
+	return append(tags, existing...)
+}
+
+func appendNodePoolSystemTags(existing []hypershiftv1beta1.AWSNodePoolResourceTag) []hypershiftv1beta1.AWSNodePoolResourceTag {
+	tags := []hypershiftv1beta1.AWSNodePoolResourceTag{
+		{Key: "red-hat-managed", Value: "true"},
 	}
 	return append(tags, existing...)
 }

@@ -5,7 +5,7 @@ go 1.26.3
 replace (
 	github.com/openshift-online/rosa-hyperfleet-api/api => ../api
 	github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-db => ../hyperfleet-db
-	github.com/openshift/hypershift/api => github.com/typeid/hypershift/api v0.0.0-20260820220744-efc243a1adf8
+	github.com/openshift/hypershift/api => github.com/typeid/hypershift/api v0.0.0-20260916080119-50a03de4e345
 )
 
 require (
@@ -25,7 +25,7 @@ require (
 	github.com/openshift-online/rosa-hyperfleet-api/hyperfleet-db v0.0.0
 	github.com/openshift-online/rosa-hyperfleet-kube-applier v1.0.1
 	github.com/openshift-online/rosa-hyperfleet-kube-applier/hyperfleet-dynamo v1.0.1
-	github.com/openshift/api v0.0.0-20260715165912-72066cc9718b
+	github.com/openshift/api v0.0.0-20260805160557-b61243060d5f
 	github.com/openshift/hypershift/api v0.0.0-20260625052409-9acec4759a16
 	github.com/prometheus/client_golang v1.24.1
 	k8s.io/api v0.36.2
