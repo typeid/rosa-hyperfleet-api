@@ -313,6 +313,12 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, oidcSigningKeyExternal b
 	if hcSpec.Platform.AWS != nil {
 		hcSpec.Platform.AWS.EndpointAccess = hypershiftv1beta1.PublicAndPrivate
 		hcSpec.Platform.AWS.ResourceTags = appendSystemTags(hcSpec.Platform.AWS.ResourceTags, clusterID)
+		hcSpec.Platform.AWS.ManagedDNS = &hypershiftv1beta1.AWSManagedDNSSpec{
+			IngressDomainPrefix: "in",
+			Delegation: hypershiftv1beta1.AWSManagedDNSDelegationSpec{
+				NSDelegation: hypershiftv1beta1.NSDelegationManual,
+			},
+		}
 	}
 
 	// References the Secret materialized by oidcSigningKeySecret's ExternalSecret.
@@ -326,7 +332,6 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, oidcSigningKeyExternal b
 		hypershiftv1beta1.PodSecurityAdmissionLabelOverrideAnnotation: "privileged",
 		hypershiftv1beta1.CleanupCloudResourcesAnnotation:             "true",
 		"hypershift.openshift.io/aws-iam-authenticator":               "true",
-		hypershiftv1beta1.ManagedIngressDNSAnnotation:                 "true",
 	}
 	// Development override: pin the control-plane-operator image so hosted
 	// clusters run a chosen CPO build (e.g. from an openshift/hypershift PR).
