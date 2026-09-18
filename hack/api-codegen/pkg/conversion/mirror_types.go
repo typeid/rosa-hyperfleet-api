@@ -51,6 +51,18 @@ var mirrorTypeMappings = []MirrorTypeMapping{
 		ConversionStrategy: "json-roundtrip",
 	},
 
+	// OperatorConfiguration: HyperFleet owns a reduced mirror (api/v1alpha1/configuration.go)
+	// that exposes only the ingress operator, with granular markers so that
+	// endpointPublishingStrategy stays customer-mutable while defaultCertificate is
+	// platform-managed (service-set). The nested IngressOperatorSpec is handled by the
+	// json-roundtrip strategy, so it needs no separate mapping.
+	{
+		FieldName:          "OperatorConfiguration",
+		HyperFleetType:     "v1alpha1.OperatorConfiguration",
+		HyperShiftType:     "v1beta1.OperatorConfiguration",
+		ConversionStrategy: "json-roundtrip",
+	},
+
 	// Add more mirror types here as needed when types diverge between CRD and REST
 	// Example:
 	// {

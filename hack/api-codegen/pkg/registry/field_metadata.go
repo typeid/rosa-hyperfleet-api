@@ -528,9 +528,15 @@ var FieldRegistry = TypedFieldRegistry{
 			OwnerType: "Cluster",
 			OwnerGVK:  "hyperfleet.io/v1alpha1.Cluster",
 		},
-		"spec.hostedCluster.operatorConfiguration": {
-			FieldPath: "spec.hostedCluster.operatorConfiguration",
+		"spec.hostedCluster.operatorConfiguration.ingressOperator.defaultCertificate": {
+			FieldPath: "spec.hostedCluster.operatorConfiguration.ingressOperator.defaultCertificate",
 			WriteMode: ServiceSet,
+			OwnerType: "Cluster",
+			OwnerGVK:  "hyperfleet.io/v1alpha1.Cluster",
+		},
+		"spec.hostedCluster.operatorConfiguration.ingressOperator.endpointPublishingStrategy": {
+			FieldPath: "spec.hostedCluster.operatorConfiguration.ingressOperator.endpointPublishingStrategy",
+			WriteMode: Mutable,
 			OwnerType: "Cluster",
 			OwnerGVK:  "hyperfleet.io/v1alpha1.Cluster",
 		},
@@ -985,6 +991,20 @@ var FieldRegistry = TypedFieldRegistry{
 			OwnerGVK:  "",
 		},
 	},
+	"IngressOperatorSpec": {
+		"defaultCertificate": {
+			FieldPath: "defaultCertificate",
+			WriteMode: ServiceSet,
+			OwnerType: "IngressOperatorSpec",
+			OwnerGVK:  "",
+		},
+		"endpointPublishingStrategy": {
+			FieldPath: "endpointPublishingStrategy",
+			WriteMode: Mutable,
+			OwnerType: "IngressOperatorSpec",
+			OwnerGVK:  "",
+		},
+	},
 	"KubeletConfig": {
 		"allowedUnsafeSysctls": {
 			FieldPath: "allowedUnsafeSysctls",
@@ -1368,6 +1388,20 @@ var FieldRegistry = TypedFieldRegistry{
 			WriteMode: Immutable,
 			OwnerType: "OidcConfig",
 			OwnerGVK:  "hyperfleet.io/v1alpha1.OidcConfig",
+		},
+	},
+	"OperatorConfiguration": {
+		"ingressOperator.defaultCertificate": {
+			FieldPath: "ingressOperator.defaultCertificate",
+			WriteMode: ServiceSet,
+			OwnerType: "OperatorConfiguration",
+			OwnerGVK:  "",
+		},
+		"ingressOperator.endpointPublishingStrategy": {
+			FieldPath: "ingressOperator.endpointPublishingStrategy",
+			WriteMode: Mutable,
+			OwnerType: "OperatorConfiguration",
+			OwnerGVK:  "",
 		},
 	},
 	"PlatformSpec": {

@@ -124,7 +124,11 @@ type ClusterStatus struct {
 
 	// DNSZones contains DNS zone information for zones managed by the control plane.
 	// Populated from the HostedCluster's platform status when managed ingress DNS is enabled.
+	// At most a public and a private ingress zone are managed, matching the upstream
+	// HostedControlPlane bound. MaxItems also bounds the per-item CEL rule cost so the
+	// generated CRD stays within the x-kubernetes-validations cost budget.
 	// +optional
+	// +kubebuilder:validation:MaxItems=2
 	DNSZones []hypershiftv1beta1.AWSDNSZoneStatus `json:"dnsZones,omitempty"`
 
 	// PlacementRef references the Placement that assigned this cluster to a management cluster.

@@ -409,6 +409,7 @@ type importInfo struct {
 	NeedsV1alpha1   bool
 	NeedsCorev1     bool
 	NeedsConfigv1   bool
+	NeedsOperatorv1 bool
 	NeedsRuntime    bool
 }
 
@@ -435,6 +436,9 @@ func (g *Generator) detectImports(goTypes []string) importInfo {
 		}
 		if strings.Contains(base, "configv1.") {
 			info.NeedsConfigv1 = true
+		}
+		if strings.Contains(base, "operatorv1.") {
+			info.NeedsOperatorv1 = true
 		}
 		if strings.Contains(base, "runtime.") {
 			info.NeedsRuntime = true
@@ -543,10 +547,13 @@ var restTypeTmpl = template.Must(template.New("restType").Parse(`// Code generat
 
 package {{ .PackageName }}
 
-{{ if or .Imports.NeedsMetav1 .Imports.NeedsHyperShift .Imports.NeedsV1alpha1 .Imports.NeedsCorev1 .Imports.NeedsConfigv1 .Imports.NeedsRuntime -}}
+{{ if or .Imports.NeedsMetav1 .Imports.NeedsHyperShift .Imports.NeedsV1alpha1 .Imports.NeedsCorev1 .Imports.NeedsConfigv1 .Imports.NeedsOperatorv1 .Imports.NeedsRuntime -}}
 import (
 {{- if .Imports.NeedsConfigv1 }}
 	configv1 "github.com/openshift/api/config/v1"
+{{- end }}
+{{- if .Imports.NeedsOperatorv1 }}
+	operatorv1 "github.com/openshift/api/operator/v1"
 {{- end }}
 {{- if .Imports.NeedsHyperShift }}
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -1113,10 +1120,13 @@ var serviceSetTmpl = template.Must(template.New("serviceSet").Parse(`// Code gen
 
 package {{ .PackageName }}
 
-{{ if or .Imports.NeedsCorev1 .Imports.NeedsConfigv1 .Imports.NeedsMetav1 .Imports.NeedsHyperShift .Imports.NeedsV1alpha1 -}}
+{{ if or .Imports.NeedsCorev1 .Imports.NeedsConfigv1 .Imports.NeedsOperatorv1 .Imports.NeedsMetav1 .Imports.NeedsHyperShift .Imports.NeedsV1alpha1 -}}
 import (
 {{- if .Imports.NeedsConfigv1 }}
 	configv1 "github.com/openshift/api/config/v1"
+{{- end }}
+{{- if .Imports.NeedsOperatorv1 }}
+	operatorv1 "github.com/openshift/api/operator/v1"
 {{- end }}
 {{- if .Imports.NeedsHyperShift }}
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"

@@ -505,8 +505,14 @@
     "ownerGVK": "hyperfleet.io/v1alpha1.Cluster"
   },
   {
-    "fieldPath": "spec.hostedCluster.operatorConfiguration",
+    "fieldPath": "spec.hostedCluster.operatorConfiguration.ingressOperator.defaultCertificate",
     "writeMode": "service-set",
+    "ownerType": "Cluster",
+    "ownerGVK": "hyperfleet.io/v1alpha1.Cluster"
+  },
+  {
+    "fieldPath": "spec.hostedCluster.operatorConfiguration.ingressOperator.endpointPublishingStrategy",
+    "writeMode": "mutable",
     "ownerType": "Cluster",
     "ownerGVK": "hyperfleet.io/v1alpha1.Cluster"
   },
@@ -955,6 +961,18 @@
     "ownerGVK": ""
   },
   {
+    "fieldPath": "defaultCertificate",
+    "writeMode": "service-set",
+    "ownerType": "IngressOperatorSpec",
+    "ownerGVK": ""
+  },
+  {
+    "fieldPath": "endpointPublishingStrategy",
+    "writeMode": "mutable",
+    "ownerType": "IngressOperatorSpec",
+    "ownerGVK": ""
+  },
+  {
     "fieldPath": "allowedUnsafeSysctls",
     "writeMode": "service-set",
     "hidden": true,
@@ -1328,6 +1346,18 @@
     "writeMode": "immutable",
     "ownerType": "OidcConfig",
     "ownerGVK": "hyperfleet.io/v1alpha1.OidcConfig"
+  },
+  {
+    "fieldPath": "ingressOperator.defaultCertificate",
+    "writeMode": "service-set",
+    "ownerType": "OperatorConfiguration",
+    "ownerGVK": ""
+  },
+  {
+    "fieldPath": "ingressOperator.endpointPublishingStrategy",
+    "writeMode": "mutable",
+    "ownerType": "OperatorConfiguration",
+    "ownerGVK": ""
   },
   {
     "fieldPath": "aws",

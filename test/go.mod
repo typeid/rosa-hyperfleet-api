@@ -15,7 +15,7 @@ require (
 	github.com/openshift-online/rosa-hyperfleet-api/api v0.0.0
 	github.com/openshift-online/rosa-hyperfleet-api/clientset v0.0.0
 	github.com/openshift/hypershift/api v0.0.0-20260625052409-9acec4759a16
-	k8s.io/apimachinery v0.36.3
+	k8s.io/apimachinery v0.37.0
 )
 
 require (
@@ -63,7 +63,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/mod v0.38.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
-	golang.org/x/oauth2 v0.34.0 // indirect
+	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/term v0.45.0 // indirect
@@ -73,10 +73,10 @@ require (
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
-	k8s.io/api v0.36.2 // indirect
-	k8s.io/client-go v0.36.0 // indirect
+	k8s.io/api v0.37.0 // indirect
+	k8s.io/client-go v0.37.0 // indirect
 	k8s.io/klog/v2 v2.140.0 // indirect
-	k8s.io/kube-openapi v0.0.0-20260519202549-bbf5c5577288 // indirect
+	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad // indirect
 	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
@@ -89,4 +89,4 @@ replace (
 	github.com/openshift-online/rosa-hyperfleet-api/clientset => ../clientset
 )
 
-replace github.com/openshift/hypershift/api => github.com/typeid/hypershift/api v0.0.0-20260916080119-50a03de4e345
+replace github.com/openshift/hypershift/api => github.com/typeid/hypershift/api v0.0.0-20261005072243-da40a26258af

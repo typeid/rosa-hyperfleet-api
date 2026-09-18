@@ -146,6 +146,12 @@ type ServiceSetFields struct {
 	CpuManagerReconcilePeriod *metav1.Duration `json:"cpuManagerReconcilePeriod,omitempty"`
 	// CreatorARN is service-set (platform-managed, hidden from API)
 	CreatorARN string `json:"creatorARN,omitempty"`
+	// DefaultCertificate is service-set (platform-managed, hidden from API)
+	DefaultCertificate string `json:"defaultCertificate,omitempty"`
+	// Dns is service-set (platform-managed, hidden from API)
+	Dns hypershiftv1beta1.DNSSpec `json:"dns,omitempty"`
+	// Etcd is service-set (platform-managed, hidden from API)
+	Etcd hypershiftv1beta1.EtcdSpec `json:"etcd,omitempty"`
 	// EvictionHard is service-set (platform-managed, hidden from API)
 	EvictionHard map[string]string `json:"evictionHard,omitempty"`
 	// EvictionSoft is service-set (platform-managed, hidden from API)
@@ -186,6 +192,8 @@ type ServiceSetFields struct {
 	NodeVolumeDetachTimeout *metav1.Duration `json:"nodeVolumeDetachTimeout,omitempty"`
 	// Oauth is service-set (platform-managed, hidden from API)
 	Oauth *v1alpha1.OAuthConfiguration `json:"oauth,omitempty"`
+	// OlmCatalogPlacement is service-set (platform-managed, hidden from API)
+	OlmCatalogPlacement hypershiftv1beta1.OLMCatalogPlacement `json:"olmCatalogPlacement,omitempty"`
 	// OsImageStream is service-set (platform-managed, hidden from API)
 	OsImageStream hypershiftv1beta1.OSImageStreamReference `json:"osImageStream,omitempty"`
 	// PausedUntil is service-set (platform-managed, hidden from API)

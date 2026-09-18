@@ -2,6 +2,8 @@ package v1alpha1
 
 import (
 	configv1 "github.com/openshift/api/config/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -246,8 +248,8 @@ type MachineConfigSpec struct {
 }
 
 type SystemdUnit struct {
-	Name string `json:"name"`
-	Enabled  *bool `json:"enabled,omitempty"`
+	Name    string `json:"name"`
+	Enabled *bool  `json:"enabled,omitempty"`
 	// +kubebuilder:validation:MaxLength=65536
 	Contents string `json:"contents,omitempty"`
 	// +kubebuilder:validation:MaxItems=16
@@ -268,4 +270,30 @@ type FileSpec struct {
 	User      *string `json:"user,omitempty"`
 	Group     *string `json:"group,omitempty"`
 	Overwrite *bool   `json:"overwrite,omitempty"`
+}
+
+// OperatorConfiguration is a HyperFleet-owned mirror of hypershiftv1beta1.OperatorConfiguration
+// that exposes a granular, per-field write-mode surface for OCP operator configuration.
+// Only the ingress operator is currently exposed; all other operator configuration
+// (e.g. clusterVersionOperator, clusterNetworkOperator) remains platform-managed.
+// +hyperfleet:upstream-reduced-object=hypershiftv1beta1.OperatorConfiguration
+type OperatorConfiguration struct {
+	// ingressOperator specifies configuration for the Ingress Operator in the hosted cluster.
+	// +hyperfleet:write-mode=service-set
+	IngressOperator *IngressOperatorSpec `json:"ingressOperator,omitempty"`
+}
+
+// IngressOperatorSpec is a HyperFleet-owned mirror of hypershiftv1beta1.IngressOperatorSpec.
+// Customers may choose how the default ingress controller endpoints are published, but the
+// default serving certificate is platform-managed and set by the service.
+// +hyperfleet:upstream-reduced-object=hypershiftv1beta1.IngressOperatorSpec
+type IngressOperatorSpec struct {
+	// endpointPublishingStrategy controls how the default ingress controller endpoints are published.
+	// +hyperfleet:write-mode=mutable
+	EndpointPublishingStrategy *operatorv1.EndpointPublishingStrategy `json:"endpointPublishingStrategy,omitempty"`
+
+	// defaultCertificate references the ingress serving certificate secret. Platform-managed:
+	// the service sets this to the managed ingress serving cert, so customers cannot set it.
+	// +hyperfleet:write-mode=service-set
+	DefaultCertificate hypershiftv1beta1.IngressDefaultCertificateReference `json:"defaultCertificate,omitzero"`
 }

@@ -192,7 +192,9 @@ spec:
                               description: karpenter specifies the configuration for the Karpenter provisioner.
                               properties:
                                 aws:
-                                  description: aws specifies the AWS-specific configuration for Karpenter.
+                                  description: |-
+                                    aws specifies the AWS-specific configuration for Karpenter.
+                                    Required when platform is "AWS", and forbidden otherwise.
                                   properties:
                                     roleARN:
                                       description: "roleARN specifies the ARN of the IAM role that Karpenter assumes to provision\nand manage EC2 instances in the hosted cluster's AWS account.\n\nThe referenced role must have a trust relationship that allows it to be assumed\nby the karpenter service account in the hosted cluster via OIDC.\nExample:\n{\n\t\"Version\": \"2012-10-17\",\n\t\"Statement\": [\n\t\t{\n\t\t\t\"Effect\": \"Allow\",\n\t\t\t\"Principal\": {\n\t\t\t\t\"Federated\": \"<oidc-provider-arn>\"\n\t\t\t},\n\t\t\t\"Action\": \"sts:AssumeRoleWithWebIdentity\",\n\t\t\t\"Condition\": {\n\t\t\t\t\"StringEquals\": {\n\t\t\t\t\t\"<oidc-provider-name>:sub\": \"system:serviceaccount:kube-system:karpenter\"\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t]\n}\n\nThe following is an example of the policy document for this role.\n\n{\n\t\"Version\": \"2012-10-17\",\n\t\"Statement\": [\n\t\t{\n\t\t\t\"Sid\": \"AllowScopedEC2InstanceAccessActions\",\n\t\t\t\"Effect\": \"Allow\",\n\t\t\t\"Resource\": [\n\t\t\t\t\"arn:*:ec2:*::image/*\",\n\t\t\t\t\"arn:*:ec2:*::snapshot/*\",\n\t\t\t\t\"arn:*:ec2:*:*:security-group/*\",\n\t\t\t\t\"arn:*:ec2:*:*:subnet/*\"\n\t\t\t],\n\t\t\t\"Action\": [\n\t\t\t\t\"ec2:RunInstances\",\n\t\t\t\t\"ec2:CreateFleet\"\n\t\t\t]\n\t\t},\n\t\t{\n\t\t\t\"Sid\": \"AllowScopedEC2LaunchTemplateAccessActions\",\n\t\t\t\"Effect\": \"Allow\",\n\t\t\t\"Resource\": \"arn:*:ec2:*:*:launch-template/*\",\n\t\t\t\"Action\": [\n\t\t\t\t\"ec2:RunInstances\",\n\t\t\t\t\"ec2:CreateFleet\"\n\t\t\t]\n\t\t},\n\t\t{\n\t\t\t\"Sid\": \"AllowScopedEC2InstanceActionsWithTags\",\n\t\t\t\"Effect\": \"Allow\",\n\t\t\t\"Resource\": [\n\t\t\t\t\"arn:*:ec2:*:*:fleet/*\",\n\t\t\t\t\"arn:*:ec2:*:*:instance/*\",\n\t\t\t\t\"arn:*:ec2:*:*:volume/*\",\n\t\t\t\t\"arn:*:ec2:*:*:network-interface/*\",\n\t\t\t\t\"arn:*:ec2:*:*:launch-template/*\",\n\t\t\t\t\"arn:*:ec2:*:*:spot-instances-request/*\"\n\t\t\t],\n\t\t\t\"Action\": [\n\t\t\t\t\"ec2:RunInstances\",\n\t\t\t\t\"ec2:CreateFleet\",\n\t\t\t\t\"ec2:CreateLaunchTemplate\"\n\t\t\t],\n\t\t\t\"Condition\": {\n\t\t\t\t\"StringLike\": {\n\t\t\t\t\t\"aws:RequestTag/karpenter.sh/nodepool\": \"*\"\n\t\t\t\t}\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"Sid\": \"AllowScopedResourceCreationTagging\",\n\t\t\t\"Effect\": \"Allow\",\n\t\t\t\"Resource\": [\n\t\t\t\t\"arn:*:ec2:*:*:fleet/*\",\n\t\t\t\t\"arn:*:ec2:*:*:instance/*\",\n\t\t\t\t\"arn:*:ec2:*:*:volume/*\",\n\t\t\t\t\"arn:*:ec2:*:*:network-interface/*\",\n\t\t\t\t\"arn:*:ec2:*:*:launch-template/*\",\n\t\t\t\t\"arn:*:ec2:*:*:spot-instances-request/*\"\n\t\t\t],\n\t\t\t\"Action\": \"ec2:CreateTags\",\n\t\t\t\"Condition\": {\n\t\t\t\t\"StringEquals\": {\n\t\t\t\t\t\"ec2:CreateAction\": [\n\t\t\t\t\t\t\"RunInstances\",\n\t\t\t\t\t\t\"CreateFleet\",\n\t\t\t\t\t\t\"CreateLaunchTemplate\"\n\t\t\t\t\t]\n\t\t\t\t},\n\t\t\t\t\"StringLike\": {\n\t\t\t\t\t\"aws:RequestTag/karpenter.sh/nodepool\": \"*\"\n\t\t\t\t}\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"Sid\": \"AllowScopedResourceTagging\",\n\t\t\t\"Effect\": \"Allow\",\n\t\t\t\"Resource\": \"arn:*:ec2:*:*:instance/*\",\n\t\t\t\"Action\": \"ec2:CreateTags\",\n\t\t\t\"Condition\": {\n\t\t\t\t\"StringLike\": {\n\t\t\t\t\t\"aws:ResourceTag/karpenter.sh/nodepool\": \"*\"\n\t\t\t\t}\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"Sid\": \"AllowScopedDeletion\",\n\t\t\t\"Effect\": \"Allow\",\n\t\t\t\"Resource\": [\n\t\t\t\t\"arn:*:ec2:*:*:instance/*\",\n\t\t\t\t\"arn:*:ec2:*:*:launch-template/*\"\n\t\t\t],\n\t\t\t\"Action\": [\n\t\t\t\t\"ec2:TerminateInstances\",\n\t\t\t\t\"ec2:DeleteLaunchTemplate\"\n\t\t\t],\n\t\t\t\"Condition\": {\n\t\t\t\t\"StringLike\": {\n\t\t\t\t\t\"aws:ResourceTag/karpenter.sh/nodepool\": \"*\"\n\t\t\t\t}\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"Sid\": \"AllowRegionalReadActions\",\n\t\t\t\"Effect\": \"Allow\",\n\t\t\t\"Resource\": \"*\",\n\t\t\t\"Action\": [\n\t\t\t\t\"ec2:DescribeImages\",\n\t\t\t\t\"ec2:DescribeInstances\",\n\t\t\t\t\"ec2:DescribeInstanceTypeOfferings\",\n\t\t\t\t\"ec2:DescribeInstanceTypes\",\n\t\t\t\t\"ec2:DescribeLaunchTemplates\",\n\t\t\t\t\"ec2:DescribeSecurityGroups\",\n\t\t\t\t\"ec2:DescribeSpotPriceHistory\",\n\t\t\t\t\"ec2:DescribeSubnets\"\n\t\t\t]\n\t\t},\n\t\t{\n\t\t\t\"Sid\": \"AllowSSMReadActions\",\n\t\t\t\"Effect\": \"Allow\",\n\t\t\t\"Resource\": \"arn:*:ssm:*::parameter/aws/service/*\",\n\t\t\t\"Action\": \"ssm:GetParameter\"\n\t\t},\n\t\t{\n\t\t\t\"Sid\": \"AllowPricingReadActions\",\n\t\t\t\"Effect\": \"Allow\",\n\t\t\t\"Resource\": \"*\",\n\t\t\t\"Action\": \"pricing:GetProducts\"\n\t\t},\n\t\t{\n\t\t\t\"Sid\": \"AllowInterruptionQueueActions\",\n\t\t\t\"Effect\": \"Allow\",\n\t\t\t\"Resource\": \"*\",\n\t\t\t\"Action\": [\n\t\t\t\t\"sqs:DeleteMessage\",\n\t\t\t\t\"sqs:GetQueueUrl\",\n\t\t\t\t\"sqs:ReceiveMessage\"\n\t\t\t]\n\t\t},\n\t\t{\n\t\t\t\"Sid\": \"AllowPassingInstanceRole\",\n\t\t\t\"Effect\": \"Allow\",\n\t\t\t\"Resource\": \"arn:*:iam::*:role/*\",\n\t\t\t\"Action\": \"iam:PassRole\",\n\t\t\t\"Condition\": {\n\t\t\t\t\"StringEquals\": {\n\t\t\t\t\t\"iam:PassedToService\": [\n\t\t\t\t\t\t\"ec2.amazonaws.com\",\n\t\t\t\t\t\t\"ec2.amazonaws.com.cn\"\n\t\t\t\t\t]\n\t\t\t\t}\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"Sid\": \"AllowScopedInstanceProfileCreationActions\",\n\t\t\t\"Effect\": \"Allow\",\n\t\t\t\"Resource\": \"arn:*:iam::*:instance-profile/*\",\n\t\t\t\"Action\": [\n\t\t\t\t\"iam:CreateInstanceProfile\"\n\t\t\t],\n\t\t\t\"Condition\": {\n\t\t\t\t\"StringLike\": {\n\t\t\t\t\t\"aws:RequestTag/karpenter.k8s.aws/ec2nodeclass\": \"*\"\n\t\t\t\t}\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"Sid\": \"AllowScopedInstanceProfileTagActions\",\n\t\t\t\"Effect\": \"Allow\",\n\t\t\t\"Resource\": \"arn:*:iam::*:instance-profile/*\",\n\t\t\t\"Action\": [\n\t\t\t\t\"iam:TagInstanceProfile\"\n\t\t\t],\n\t\t\t\"Condition\": {\n\t\t\t\t\"StringLike\": {\n\t\t\t\t\t\"aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass\": \"*\",\n\t\t\t\t\t\"aws:RequestTag/karpenter.k8s.aws/ec2nodeclass\": \"*\"\n\t\t\t\t}\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"Sid\": \"AllowScopedInstanceProfileActions\",\n\t\t\t\"Effect\": \"Allow\",\n\t\t\t\"Resource\": \"arn:*:iam::*:instance-profile/*\",\n\t\t\t\"Action\": [\n\t\t\t\t\"iam:AddRoleToInstanceProfile\",\n\t\t\t\t\"iam:RemoveRoleFromInstanceProfile\",\n\t\t\t\t\"iam:DeleteInstanceProfile\"\n\t\t\t],\n\t\t\t\"Condition\": {\n\t\t\t\t\"StringLike\": {\n\t\t\t\t\t\"aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass\": \"*\"\n\t\t\t\t}\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"Sid\": \"AllowInstanceProfileReadActions\",\n\t\t\t\"Effect\": \"Allow\",\n\t\t\t\"Resource\": \"arn:*:iam::*:instance-profile/*\",\n\t\t\t\"Action\": \"iam:GetInstanceProfile\"\n\t\t},\n\t\t{\n\t\t\t\"Sid\": \"AllowUnscopedInstanceProfileListAction\",\n\t\t\t\"Effect\": \"Allow\",\n\t\t\t\"Resource\": \"*\",\n\t\t\t\"Action\": \"iam:ListInstanceProfiles\"\n\t\t}\n\t]\n}"
@@ -201,10 +203,36 @@ spec:
                                   required:
                                     - roleARN
                                   type: object
+                                azure:
+                                  description: |-
+                                    azure specifies the Azure-specific configuration for Karpenter.
+                                    Required when platform is "Azure", and forbidden otherwise.
+                                  properties:
+                                    clientID:
+                                      description: |-
+                                        clientID is the client ID of the user-assigned managed identity Karpenter uses
+                                        to provision and manage Azure VMs in the hosted cluster's subscription.
+
+                                        The identity must have a federated credential that trusts the hosted cluster
+                                        OIDC issuer for subject system:serviceaccount:kube-system:karpenter.
+
+                                        The identity must be granted Virtual Machine Contributor, Network Contributor,
+                                        and Managed Identity Operator on the cluster resource group (and Network Contributor
+                                        on the VNet resource group when it differs).
+
+                                        The client ID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+                                      maxLength: 36
+                                      minLength: 36
+                                      pattern: ^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+                                      type: string
+                                  required:
+                                    - clientID
+                                  type: object
                                 platform:
                                   description: platform specifies the infrastructure platform that Karpenter should provision nodes on.
                                   enum:
                                     - AWS
+                                    - Azure
                                   maxLength: 100
                                   type: string
                               required:
@@ -266,6 +294,28 @@ spec:
                           maxItems: 3
                           minItems: 1
                           type: array
+                        kubeClientBurst:
+                          description: |-
+                            kubeClientBurst sets the "--kube-client-burst" flag on cluster-autoscaler.
+                            Controls the maximum burst of queries to the kube-apiserver.
+                            Valid values are 1 through 2000.
+                            When omitted, the flag is not set and the autoscaler uses its default (10).
+                          format: int32
+                          maximum: 2000
+                          minimum: 1
+                          type: integer
+                        kubeClientQPS:
+                          description: |-
+                            kubeClientQPS sets the "--kube-client-qps" flag on cluster-autoscaler.
+                            Controls the maximum queries-per-second the autoscaler may send to the
+                            kube-apiserver. Valid values are -1 through 1000.
+                            When set to -1, client-side rate limiting is disabled.
+                            When set to 0, the flag is passed but client-go applies its default QPS of 5.
+                            When omitted, the flag is not set and the autoscaler uses its default (5).
+                          format: int32
+                          maximum: 1000
+                          minimum: -1
+                          type: integer
                         maxFreeDifferenceRatioPercent:
                           description: |-
                             maxFreeDifferenceRatioPercent sets the maximum difference ratio for free resources between similar node groups. This parameter controls how strict the similarity check is when comparing node groups for load balancing.
@@ -4318,7 +4368,6 @@ spec:
                             networkType specifies the SDN provider used for cluster networking.
                             Defaults to OVNKubernetes.
                             This field is required and immutable.
-                            kubebuilder:validation:XValidation:rule="self == oldSelf", message="networkType is immutable"
                           enum:
                             - OpenShiftSDN
                             - Calico
@@ -5533,22 +5582,28 @@ spec:
                               type: string
                             managedDNS:
                               description: |-
-                                managedDNS configures CPO-managed Route53 DNS zones for this cluster.
-                                An empty object ({}) enables managed DNS with all defaults.
-                              minProperties: 0
+                                managedDNS configures managed Route53 DNS zones for this cluster.
+                                Managed DNS is enabled when this field is set, which requires
+                                ingressDomainPrefix. When enabled, the control plane operator creates and
+                                reconciles the cluster's DNS zones in the customer's AWS account instead of
+                                requiring them to be pre-created externally and passed in as zone IDs.
+                                For standard clusters this covers the .hypershift.local private zone and
+                                the public and private ingress zones. For shared VPC clusters only the
+                                public ingress zone is managed, since the .hypershift.local and private
+                                ingress zones are owned by the VPC owner.
                               properties:
                                 delegation:
                                   description: |-
                                     delegation configures service-side DNS delegation for certificate generation.
-                                    When set, the CPO creates an ACME DNS01 challenge CNAME in the public ingress
-                                    zone and handles NS delegation based on the nsDelegation mode.
+                                    When set, the ControlPlaneOperator creates an ACME DNS01 challenge CNAME in the
+                                    public ingress zone and handles NS delegation based on the nsDelegationMode.
                                     When absent, only zones are created and the consuming platform handles
                                     delegation and certificate management.
                                   properties:
-                                    nsDelegation:
+                                    nsDelegationMode:
                                       description: |-
-                                        nsDelegation specifies how NS delegation records are created in the parent zone.
-                                        "ExternalDNS": the CPO creates a DNSEndpoint CR in the control plane namespace;
+                                        nsDelegationMode specifies how NS delegation records are created in the parent zone.
+                                        "ExternalDNS": the ControlPlaneOperator creates a DNSEndpoint CR in the control plane namespace;
                                         external-dns creates NS records in the parent zone.
                                         "Manual": the consuming platform handles NS delegation using nameservers
                                         reported in HostedCluster status.
@@ -5557,19 +5612,24 @@ spec:
                                         - Manual
                                       type: string
                                   required:
-                                    - nsDelegation
+                                    - nsDelegationMode
                                   type: object
                                 ingressDomainPrefix:
-                                  default: in
                                   description: |-
-                                    ingressDomainPrefix is the subdomain prefix for ingress DNS zones.
-                                    Zones are created as {prefix}.{baseDomainPrefix}.{baseDomain}.
-                                    When delegation is configured, the prefix creates a DNS delegation boundary
+                                    ingressDomainPrefix is the subdomain prefix for the managed ingress DNS zones.
+                                    The zone is created as {ingressDomainPrefix}.{clusterBaseDomain}, where
+                                    {clusterBaseDomain} is the cluster base domain configured via the HostedCluster
+                                    spec.dns (baseDomainPrefix and baseDomain).
+                                    When delegation is configured, this prefix creates a DNS delegation boundary
                                     that separates the ingress zone from the cluster domain, enabling ACME
                                     challenge CNAME delegation back to the parent zone.
+                                    Must be 1-63 characters, consist only of lowercase alphanumeric characters or
+                                    hyphens, and must start and end with an alphanumeric character.
                                   maxLength: 63
                                   minLength: 1
                                   type: string
+                              required:
+                                - ingressDomainPrefix
                               type: object
                             multiArch:
                               default: false
@@ -5844,8 +5904,9 @@ spec:
                                 before they are terminated, providing a best effort for graceful shutdown.
 
                                 Supports both standard and FIFO queues (FIFO queues end with .fifo suffix).
+                                Supports FedRAMP/FIPS endpoints (sqs-fips prefix) and GovCloud regions.
                               maxLength: 512
-                              pattern: ^https://sqs\.[a-z0-9-]+\.amazonaws\.com/[0-9]{12}/[a-zA-Z0-9_-]+(\.fifo)?$
+                              pattern: ^https://sqs(-fips)?\.([a-z0-9-]+)\.amazonaws\.com/[0-9]{12}/[a-zA-Z0-9_-]+(\.fifo)?$
                               type: string
                           required:
                             - region
@@ -8563,33 +8624,66 @@ spec:
                   description: |-
                     DNSZones contains DNS zone information for zones managed by the control plane.
                     Populated from the HostedCluster's platform status when managed ingress DNS is enabled.
+                    At most a public and a private ingress zone are managed, matching the upstream
+                    HostedControlPlane bound. MaxItems also bounds the per-item CEL rule cost so the
+                    generated CRD stays within the x-kubernetes-validations cost budget.
                   items:
                     description: AWSDNSZoneStatus represents a managed Route53 DNS zone and its metadata.
                     properties:
                       name:
-                        description: name is the DNS name of the hosted zone.
+                        description: |-
+                          name is the DNS name of the hosted zone.
+                          name must be at most 253 characters in length (the maximum length of a DNS
+                          name) and must consist only of alphanumeric characters, hyphens, and periods.
+                          Each period-separated segment must start and end with an alphanumeric character.
                         maxLength: 253
                         minLength: 1
                         type: string
+                        x-kubernetes-validations:
+                          - message: name must be a valid DNS domain name consisting of alphanumeric characters, hyphens, and periods, where each segment starts and ends with an alphanumeric character
+                            rule: self.matches('^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$')
                       nameServers:
                         description: |-
                           nameServers are the authoritative name servers for this zone.
                           Used for NS delegation when external-dns is not available.
+                          When omitted, there are no name servers to report: private ingress zones
+                          never populate this field, and a public zone has none until its delegation
+                          set has been resolved.
+                          When present, contains 1-8 unique name servers. Each name server must be at
+                          most 253 characters in length and must consist only of alphanumeric characters,
+                          hyphens, and periods, where each period-separated segment starts and ends with
+                          an alphanumeric character.
                         items:
                           maxLength: 253
                           minLength: 1
                           type: string
-                        maxItems: 10
+                          x-kubernetes-validations:
+                            - message: each nameServer must be a valid DNS domain name consisting of alphanumeric characters, hyphens, and periods, where each segment starts and ends with an alphanumeric character
+                              rule: self.matches('^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$')
+                        maxItems: 8
                         minItems: 1
                         type: array
-                        x-kubernetes-list-type: atomic
+                        x-kubernetes-list-type: set
                       zoneID:
-                        description: zoneID is the Route53 hosted zone ID.
+                        description: |-
+                          zoneID is the Route53 hosted zone ID.
+                          Must be 2-32 characters and a valid Route53 hosted zone ID: a leading 'Z'
+                          followed by uppercase alphanumeric characters.
                         maxLength: 32
-                        minLength: 1
+                        minLength: 2
                         type: string
+                        x-kubernetes-validations:
+                          - message: 'zoneID must be a Route53 hosted zone ID: a leading ''Z'' followed by uppercase alphanumeric characters'
+                            rule: self.matches('^Z[A-Z0-9]+$')
                       zoneType:
-                        description: zoneType indicates the purpose of the zone.
+                        description: |-
+                          zoneType indicates the purpose of the zone.
+                          Valid values are:
+                          "PublicIngress": the public Route53 zone holding the publicly resolvable
+                          ingress DNS records (e.g. *.apps and the console) and ACME certificate
+                          validation records.
+                          "PrivateIngress": the private Route53 zone serving VPC-internal ingress
+                          DNS resolution for the guest cluster.
                         enum:
                           - PublicIngress
                           - PrivateIngress
@@ -8599,6 +8693,7 @@ spec:
                       - zoneID
                       - zoneType
                     type: object
+                  maxItems: 2
                   type: array
                 observedGeneration:
                   description: ObservedGeneration is the most recent generation observed by the controller.

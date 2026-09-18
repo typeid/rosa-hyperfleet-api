@@ -52,7 +52,7 @@ type HostedClusterSpecPassthrough struct {
 	// +k8s:openapi-gen=true
 	// +hyperfleet:write-mode=service-set
 	// +optional
-	OperatorConfiguration *hypershiftv1beta1.OperatorConfiguration `json:"operatorConfiguration,omitempty"`
+	OperatorConfiguration *OperatorConfiguration `json:"operatorConfiguration,omitempty"`
 	// imageContentSources specifies image mirrors that can be used by cluster
 	// +k8s:openapi-gen=true
 	// +hyperfleet:write-mode=mutable

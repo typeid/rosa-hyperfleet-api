@@ -32,6 +32,11 @@ resources:
               operations:
                 - create
                 - update
+            - path: spec.hostedCluster.autoNode.provisionerConfig.karpenter.azure.clientID
+              goType: string
+              operations:
+                - create
+                - update
             - path: spec.hostedCluster.autoNode.provisionerConfig.karpenter.platform
               goType: string
               operations:
@@ -179,6 +184,116 @@ resources:
               operations:
                 - create
                 - update
+            - path: spec.hostedCluster.operatorConfiguration.ingressOperator.endpointPublishingStrategy.hostNetwork.httpPort
+              goType: integer(int32)
+              operations:
+                - create
+                - update
+            - path: spec.hostedCluster.operatorConfiguration.ingressOperator.endpointPublishingStrategy.hostNetwork.httpsPort
+              goType: integer(int32)
+              operations:
+                - create
+                - update
+            - path: spec.hostedCluster.operatorConfiguration.ingressOperator.endpointPublishingStrategy.hostNetwork.protocol
+              goType: string
+              operations:
+                - create
+                - update
+            - path: spec.hostedCluster.operatorConfiguration.ingressOperator.endpointPublishingStrategy.hostNetwork.statsPort
+              goType: integer(int32)
+              operations:
+                - create
+                - update
+            - path: spec.hostedCluster.operatorConfiguration.ingressOperator.endpointPublishingStrategy.loadBalancer.allowedSourceRanges
+              goType: array
+              operations:
+                - create
+                - update
+            - path: spec.hostedCluster.operatorConfiguration.ingressOperator.endpointPublishingStrategy.loadBalancer.dnsManagementPolicy
+              goType: string
+              operations:
+                - create
+                - update
+            - path: spec.hostedCluster.operatorConfiguration.ingressOperator.endpointPublishingStrategy.loadBalancer.providerParameters.aws.classicLoadBalancer.connectionIdleTimeout
+              goType: string
+              operations:
+                - create
+                - update
+            - path: spec.hostedCluster.operatorConfiguration.ingressOperator.endpointPublishingStrategy.loadBalancer.providerParameters.aws.classicLoadBalancer.subnets.ids
+              goType: array
+              operations:
+                - create
+                - update
+            - path: spec.hostedCluster.operatorConfiguration.ingressOperator.endpointPublishingStrategy.loadBalancer.providerParameters.aws.classicLoadBalancer.subnets.names
+              goType: array
+              operations:
+                - create
+                - update
+            - path: spec.hostedCluster.operatorConfiguration.ingressOperator.endpointPublishingStrategy.loadBalancer.providerParameters.aws.networkLoadBalancer.eipAllocations
+              goType: array
+              operations:
+                - create
+                - update
+            - path: spec.hostedCluster.operatorConfiguration.ingressOperator.endpointPublishingStrategy.loadBalancer.providerParameters.aws.networkLoadBalancer.protocol
+              goType: string
+              operations:
+                - create
+                - update
+            - path: spec.hostedCluster.operatorConfiguration.ingressOperator.endpointPublishingStrategy.loadBalancer.providerParameters.aws.networkLoadBalancer.subnets.ids
+              goType: array
+              operations:
+                - create
+                - update
+            - path: spec.hostedCluster.operatorConfiguration.ingressOperator.endpointPublishingStrategy.loadBalancer.providerParameters.aws.networkLoadBalancer.subnets.names
+              goType: array
+              operations:
+                - create
+                - update
+            - path: spec.hostedCluster.operatorConfiguration.ingressOperator.endpointPublishingStrategy.loadBalancer.providerParameters.aws.type
+              goType: string
+              operations:
+                - create
+                - update
+            - path: spec.hostedCluster.operatorConfiguration.ingressOperator.endpointPublishingStrategy.loadBalancer.providerParameters.gcp.clientAccess
+              goType: string
+              operations:
+                - create
+                - update
+            - path: spec.hostedCluster.operatorConfiguration.ingressOperator.endpointPublishingStrategy.loadBalancer.providerParameters.ibm.protocol
+              goType: string
+              operations:
+                - create
+                - update
+            - path: spec.hostedCluster.operatorConfiguration.ingressOperator.endpointPublishingStrategy.loadBalancer.providerParameters.openstack.floatingIP
+              goType: string
+              operations:
+                - create
+                - update
+            - path: spec.hostedCluster.operatorConfiguration.ingressOperator.endpointPublishingStrategy.loadBalancer.providerParameters.type
+              goType: string
+              operations:
+                - create
+                - update
+            - path: spec.hostedCluster.operatorConfiguration.ingressOperator.endpointPublishingStrategy.loadBalancer.scope
+              goType: string
+              operations:
+                - create
+                - update
+            - path: spec.hostedCluster.operatorConfiguration.ingressOperator.endpointPublishingStrategy.nodePort.protocol
+              goType: string
+              operations:
+                - create
+                - update
+            - path: spec.hostedCluster.operatorConfiguration.ingressOperator.endpointPublishingStrategy.private.protocol
+              goType: string
+              operations:
+                - create
+                - update
+            - path: spec.hostedCluster.operatorConfiguration.ingressOperator.endpointPublishingStrategy.type
+              goType: string
+              operations:
+                - create
+                - update
             - path: spec.hostedCluster.platform.aws.additionalAllowedPrincipals
               goType: array(string)
               operations:
@@ -209,7 +324,7 @@ resources:
               operations:
                 - create
                 - update
-            - path: spec.hostedCluster.platform.aws.managedDNS.delegation.nsDelegation
+            - path: spec.hostedCluster.platform.aws.managedDNS.delegation.nsDelegationMode
               goType: string
               operations:
                 - create

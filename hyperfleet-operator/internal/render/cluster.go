@@ -280,6 +280,21 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, oidcSigningKeyExternal b
 		Domain: ingressDomain,
 	}
 
+	// Wire the managed ingress serving cert as the default IngressController
+	// certificate. HyperShift syncs this secret from the HostedCluster
+	// namespace into the hosted cluster's openshift-ingress namespace,
+	// replacing the CPO-generated wildcard cert. This replaces the former
+	// ingress-cert-sync CronJob workaround in the rosa-hyperfleet repo.
+	if hcSpec.OperatorConfiguration == nil {
+		hcSpec.OperatorConfiguration = &hypershiftv1beta1.OperatorConfiguration{}
+	}
+	if hcSpec.OperatorConfiguration.IngressOperator == nil {
+		hcSpec.OperatorConfiguration.IngressOperator = &hypershiftv1beta1.IngressOperatorSpec{}
+	}
+	hcSpec.OperatorConfiguration.IngressOperator.DefaultCertificate = hypershiftv1beta1.IngressDefaultCertificateReference{
+		Name: "ingress-serving-cert",
+	}
+
 	// --- Defaults (only set if customer didn't specify) ---
 	if hcSpec.Etcd.ManagementType == "" {
 		hcSpec.Etcd = defaultEtcdSpec()
@@ -313,10 +328,10 @@ func hostedCluster(cluster *hyperfleetv1alpha1.Cluster, oidcSigningKeyExternal b
 	if hcSpec.Platform.AWS != nil {
 		hcSpec.Platform.AWS.EndpointAccess = hypershiftv1beta1.PublicAndPrivate
 		hcSpec.Platform.AWS.ResourceTags = appendClusterSystemTags(hcSpec.Platform.AWS.ResourceTags, clusterID)
-		hcSpec.Platform.AWS.ManagedDNS = &hypershiftv1beta1.AWSManagedDNSSpec{
+		hcSpec.Platform.AWS.ManagedDNS = hypershiftv1beta1.AWSManagedDNSSpec{
 			IngressDomainPrefix: "in",
 			Delegation: hypershiftv1beta1.AWSManagedDNSDelegationSpec{
-				NSDelegation: hypershiftv1beta1.NSDelegationExternalDNS,
+				NSDelegationMode: hypershiftv1beta1.NSDelegationExternalDNS,
 			},
 		}
 	}

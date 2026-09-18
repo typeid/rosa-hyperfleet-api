@@ -90,6 +90,51 @@ func TestValidateCreate_RejectsNonZeroServiceSetFields(t *testing.T) {
 	}
 }
 
+// TestValidateCreate_IngressOperator mirrors the generated registry for the
+// reduced operatorConfiguration.ingressOperator mirror: defaultCertificate is
+// platform-managed (service-set) while endpointPublishingStrategy is customer
+// mutable. It confirms a customer-supplied defaultCertificate is rejected even
+// though it is a nested struct ({name: ...}) and that endpointPublishingStrategy
+// is accepted.
+func TestValidateCreate_IngressOperator(t *testing.T) {
+	v := newTestValidator(map[string]registry.FieldMeta{
+		"spec.hostedCluster.operatorConfiguration.ingressOperator.defaultCertificate": {
+			FieldPath: "spec.hostedCluster.operatorConfiguration.ingressOperator.defaultCertificate",
+			WriteMode: registry.ServiceSet,
+		},
+		"spec.hostedCluster.operatorConfiguration.ingressOperator.endpointPublishingStrategy": {
+			FieldPath: "spec.hostedCluster.operatorConfiguration.ingressOperator.endpointPublishingStrategy",
+			WriteMode: registry.Mutable,
+		},
+	})
+
+	ingressOperator := func(inner map[string]any) map[string]any {
+		return map[string]any{
+			"hostedCluster": map[string]any{
+				"operatorConfiguration": map[string]any{
+					"ingressOperator": inner,
+				},
+			},
+		}
+	}
+
+	// Customer sets the platform-managed default certificate -> rejected.
+	errs := v.ValidateCreate(ingressOperator(map[string]any{
+		"defaultCertificate": map[string]any{"name": "customer-cert"},
+	}), featuregate.Default)
+	if errs == nil {
+		t.Fatal("expected error for service-set defaultCertificate, got nil")
+	}
+
+	// Customer chooses how ingress is published -> allowed.
+	errs = v.ValidateCreate(ingressOperator(map[string]any{
+		"endpointPublishingStrategy": map[string]any{"type": "LoadBalancerService"},
+	}), featuregate.Default)
+	if errs != nil {
+		t.Errorf("expected no error for mutable endpointPublishingStrategy, got %v", errs)
+	}
+}
+
 func TestValidateCreate_AllowsMutableFields(t *testing.T) {
 	v := newTestValidator(map[string]registry.FieldMeta{
 		"spec.displayName": {FieldPath: "spec.displayName", WriteMode: registry.Mutable},
