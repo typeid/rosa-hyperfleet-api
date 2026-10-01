@@ -3,9 +3,6 @@
 Rules for any code that stores or reconciles HyperFleet resources through hyperfleet-db:
 platform-api, the operator, and anything new. New and reviewed code follows them.
 
-> This describes the **target** model. Items marked _(PR n)_ don't exist yet; the
-> [Implementation plan](#implementation-plan) builds them.
-
 ## The rules
 
 1. **Namespace is the account.** `account-<id>`. Nothing else is encoded in it.
@@ -16,8 +13,10 @@ platform-api, the operator, and anything new. New and reviewed code follows them
 3. **UID is for machines.** Minted by the database. Every stored reference uses the
    uid, never the name.
 4. **Owned objects carry an ownerReference and the `hyperfleet.io/cluster-uid`
-   label.** Claims (`Index`, `OidcConfig`) carry their holder's uid in a label instead.
-5. **A garbage collector deletes objects whose owner is gone, and owners wait for it.**
+   label.** Claims (`Index`, `OidcConfig`, `DnsReservation`) carry their holder's uid
+   in a label instead.
+5. **Every controller cleans up what it created.** Its finalizer deletes and releases
+   it; anything left behind is a bug.
 6. **Uniqueness comes from the name, or from an `Index` claim.**
 7. **Business rules live in code, not in the database.** No new constraints and no
    special query paths.
@@ -36,7 +35,7 @@ it is **not an apiserver**. Know the differences:
 | admission / CRD schema validation     | **none**. CEL and OpenAPI markers enforce nothing; validate in platform-api      |
 | a cached, possibly stale `Get`/`List` | **always a Postgres query**. Never stale, but not free: don't call it in loops   |
 | `Patch`, `DeleteAllOf`, `GenerateName`, `DryRun` | **not supported**. Use `Get` + `Update`, and set names explicitly     |
-| Kubernetes garbage collection         | **not built in**. Use ours ([§6](#6-ownership-and-cleanup))                      |
+| Kubernetes garbage collection         | **none**. Each controller cleans up what it created ([§6](#6-ownership-and-cleanup)) |
 | unique fields beyond the name         | **only the primary key** `(kind, namespace, name)`. Use an `Index` ([§7](#7-uniqueness)) |
 | transactions across objects           | **none**. Each write is one row; converge in reconcile                           |
 
@@ -121,7 +120,7 @@ object stores its **uid**.
 | list a cluster's objects           | label selector on `hyperfleet.io/cluster-uid` (not `InNamespace`)     |
 | react to changes in owned objects  | `Owns(&NodePool{})`                                                   |
 | hold an `Index` claim              | label `hyperfleet.io/owner-uid` ([§7](#7-uniqueness))                 |
-| claim an `OidcConfig`              | label `hyperfleet.io/claimed-by-cluster-uid` (mutable: released and re-taken) |
+| claim an account object (`OidcConfig`, `DnsReservation`) | label `hyperfleet.io/claimed-by-cluster-uid` (mutable: released and re-taken) |
 
 The ownerReference and the label are set once, at create, from the same parent, so they
 can't drift apart. Both are needed because an ownerReference can't be used in a label
@@ -142,33 +141,46 @@ selector or the shard key.
   returns it. A duplicate name gets 409.
 - **Create a child:** platform-api gets the parent (404 if it is missing, 409 if it is
   being deleted), sets the ownerReference and label, then inserts.
+- **Use an account object:** things a cluster needs before it exists (`OidcConfig`, and
+  `DnsReservation` so a shared-VPC hosted zone can be made for its domain) are
+  top-level objects the client creates first. The cluster references one by uid;
+  platform-api checks it is ready and unclaimed, then sets
+  `hyperfleet.io/claimed-by-cluster-uid` (409 if another cluster holds it). When the
+  client passes none, platform-api creates one as the cluster's child.
 - **Update:** spec and annotations only. Identity, ownerReferences, and labels never
   change.
-- **Delete:** by name. The garbage collector removes children, and the owner's finalizer
-  finishes once they are gone.
+- **Delete:** by name. The owner's finalizer deletes its children and finishes once
+  they are gone.
 
 ## 6. Ownership and cleanup
 
-| Piece                  | Job                                                                                 |
-| ---------------------- | ----------------------------------------------------------------------------------- |
-| **Creator**            | sets the ownerReference and label at create                                         |
-| **Garbage collector**  | deletes any object whose owner is missing, has a different uid, or is being deleted |
-| **Owner's finalizer**  | waits until nothing carries its uid label, releases its claims, then lets go        |
+Every controller cleans up what it created, in its finalizer. Anything left behind is
+a bug. For a cluster, that means deleting its children (listed by its
+`hyperfleet.io/cluster-uid` label), waiting until they are gone, and releasing its
+claims (`Index`, `OidcConfig`, `DnsReservation`). Each
+child's own finalizer tears down what that child created. Released account objects
+stay for a later cluster.
 
-- **The garbage collector** is one generic controller. It watches every owned kind and
-  their owners, gets the owner named in the ownerReference, and compares uids. Deleting
-  only sets the child's deletion timestamp; the child's own finalizer still does its
-  teardown.
-- **The owner's finalizer** also releases what it holds in other namespaces (`Index`
-  claims, the `OidcConfig` claim), since ownerReferences can't cross namespaces.
-- **A child's finalizer must cope with a missing owner.** Normally the owner waits for
-  its children, but an orphan's owner is already gone. Clean up what you can and
-  finish; don't block forever waiting on a parent that won't come back.
+### Known gaps: no garbage collector
 
-**Why no locks are needed.** A child can be inserted just after its parent's finalizer
-found no children. The garbage collector then sees an owned object whose owner is gone
-and deletes it. If the insert lands first, the finalizer sees the child and waits.
-Either way, nothing is left behind.
+Kubernetes has a garbage collector that deletes any object whose ownerReference points
+at an owner that is gone. hyperfleet-db doesn't have one: ownerReferences are stored
+and drive `Owns()` watches, but nothing deletes an object because of them. Finalizers
+cover normal deletes. What we lose:
+
+- **The create-during-delete race.** A child inserted just after its owner's finalizer
+  last found nothing is never deleted. platform-api returns 409 for a parent that is
+  being deleted, but the parent's deletion can still start between that check and
+  the insert. Kubernetes would delete the orphan.
+- **A safety net for bugs.** If a finalizer misses something, or a finalizer is removed
+  by hand, children stay forever. Kubernetes would still clean them up.
+- **Propagation policies.** A delete with `PropagationPolicy` (`Foreground`,
+  `Background`, `Orphan`) is rejected, and `blockOwnerDeletion` does nothing. Every
+  delete runs through the owner's finalizer.
+
+Orphans don't break correctness. Uids are never reused, so a recreated cluster never
+picks up the old cluster's children. They just leak: rows stay, and a child's
+reconciler may keep retrying against a management-cluster namespace that's gone.
 
 ## 7. Uniqueness
 
@@ -186,7 +198,7 @@ metadata:
   namespace: dns-shard-0-reservations   # the scope
   name: f7a3                 # the claimed value
   labels:
-    hyperfleet.io/owner-uid: 4610b27e-8f77-4f4c-9661-c11b42e04dec
+    hyperfleet.io/owner-uid: 2b8e0c4d-5a6f-4e7b-9c1d-3e4f5a6b7c8d   # the DnsReservation
 spec: {}
 ```
 
@@ -195,8 +207,8 @@ spec: {}
   conflict.
 - **Values that aren't valid names** (e.g. URLs): normalize, then hash
   (`IssuerURLIndexName`).
-- **Keep the data on the owner** (e.g. `cluster.status.baseDomain`). The Index is only
-  the lock; don't add a second object.
+- **Keep the data on the owner** (e.g. `dnsReservation.status.baseDomain`). The Index
+  is only the lock; don't add a second object.
 - **Release:** the owner's finalizer deletes Indexes carrying its uid, and never ones
   carrying someone else's.
 
@@ -210,7 +222,8 @@ uniqueness rules multiply.
 ## 8. Sharding
 
 Each operator replica reconciles one slice of the rows, keyed by the owning cluster's
-uid (or the row's own uid if it has no owner):
+uid (or the row's own uid if it has no owner). The operator sets
+`ShardConfig.KeyLabel` to `hyperfleet.io/cluster-uid`, which makes hyperfleet-db use:
 
 ```sql
 abs(hashtext(COALESCE(metadata->'labels'->>'hyperfleet.io/cluster-uid', uid::text))::bigint) % $mod = ANY($owned)
@@ -239,85 +252,12 @@ change (`REPLICA_COUNT`). Details, limits, and the path to lease-based failover 
 
 - [ ] References another object? It stores the **uid**.
 - [ ] Belongs to a cluster? **ownerReference + `hyperfleet.io/cluster-uid`**.
-- [ ] New owned kind? **Registered with the garbage collector**.
 - [ ] Lists a cluster's objects? The **label**, not `InNamespace`.
 - [ ] Builds a name? Only `<cluster>.<child>`.
 - [ ] Per-cluster object on the management cluster? In **`cluster-<uid>`**, plain name.
 - [ ] Something unique beyond the name? One **`Index`**, value stored on the owner.
+- [ ] Needed before the cluster exists (like DNS)? A **top-level account object** the cluster claims.
 - [ ] Validation? In **platform-api**; CRD markers aren't enforced.
 - [ ] Update? **Retries on conflict**; no `Patch`.
 - [ ] Reconciler safe to run twice? No **local counts** for cross-cluster decisions.
 - [ ] New database constraint or special query? Use code instead.
-
----
-
-## Implementation plan
-
-Each PR keeps `main` green and updates the docs it affects. No migrations and no new
-database constraints.
-
-### PR 1 — fleetdb: label and uid selectors in SQL
-
-- Filter label selectors in SQL (`metadata->'labels' @> …`) with a GIN index on labels.
-  Today they are filtered in Go (`pgclient.go`, `pgcache.go`).
-- Map the field selector `metadata.uid` to the `uid` column (`fieldselector.go`). Today
-  it falls through to JSON.
-- Tests: create returns a uid, a client-sent uid is ignored, recreating a deleted name
-  gives a new uid, and label selectors filter in SQL.
-
-### PR 2 — Identity switch (all modules at once)
-
-- **api:** name validation markers and doc comments.
-- **platform-api:**
-  - Delete the namespace computation, `generateID()`, and the uid overrides in
-    `convert.go`.
-  - Validate the namespace and names; routes take the name.
-  - Child create: get the parent, then set the ownerReference and label.
-  - Ignore client-sent ownerReferences and labels; keep the stored ones on update.
-  - `clusterId` filters on the uid label.
-  - Update `openapi.yaml`.
-- **operator:**
-  - The management-cluster namespace becomes `cluster-<uid>`.
-  - Replace `InNamespace` with the uid label.
-  - `Placement` gets an ownerReference and the label; use `Owns()` in place of its map
-    functions.
-  - DNS: claim a single `Index` (owner-uid = cluster uid) and keep the base domain in
-    `cluster.status.baseDomain`. Delete `DNSReservation`, which duplicates the Index and
-    is created in a second, non-atomic step.
-  - OIDC issuer `Index`: owner-uid = the OidcConfig's uid. The `OidcConfig` claim uses
-    `hyperfleet.io/claimed-by-cluster-uid`. This replaces the name-based `hyperfleet.io/cluster-namespace`
-    and OidcConfig-name labels, which are open to ABA.
-  - Cluster finalizer: still deletes children by label (moves to the garbage collector
-    in PR 3).
-  - Render only the child part of the NodePool name.
-- **clientset:** stop sending the namespace as `X-Amz-Account-Id` (`sigv4.go`) and
-  remove `adaptNodePoolScope` (`bridge.go`).
-- **Tests:** two clusters in one account can both have `workers`, and deleting one
-  leaves the other's objects alone; a recreated cluster inherits nothing.
-
-### PR 3 — Garbage collector
-
-- One generic controller, registered for each owned kind (`NodePool`, `Placement`), that
-  also watches owners.
-- Cluster finalizer: stop deleting children; wait until the label list is empty.
-- Tests: a child inserted during its cluster's deletion is cleaned up; a child pointing
-  at an old uid under a reused name is deleted.
-
-### PR 4 — Public labels and SDK
-
-- Return labels and ownerReferences on reads; support `labelSelector` on list.
-- SDK helper for `<cluster>.<child>`. SDK waiters get by name and treat a uid change as
-  "gone".
-
-### PR 5 — Sharding
-
-- Switch `hyperfleet-db/internal/reader/shard.go` to the expression above.
-- Rewrite `sharding.md`:
-  - It still describes namespace hashing, and it credits "fenced writes" (which don't
-    exist) with making the rescale overlap safe.
-  - Add the rationale and the known limits: the rescale overlap, no failover while a
-    pod is down, and cross-cluster decisions.
-  - Add the upgrade path: fixed buckets (e.g. `Mod = 256`) owned through Postgres
-    advisory locks, which gives failover and no overlap without a schema change.
-- Add these rules to `CLAUDE.md`.
-- Tests: a cluster and all its objects share a replica.
