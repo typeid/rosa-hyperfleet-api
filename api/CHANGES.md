@@ -1,5 +1,18 @@
 # Changes
 
+## 0.1.21 Oct 20 2026
+
+- Rename ROSA HyperFleet to ROSA Seaplane
+- chore(api): bump version to api/v0.1.22
+- feat: add resettable pathbind updates
+- chore(api): bump version to api/v0.1.21
+- ROSAENG-68200 | feat: mark ipv4 subnet as immutable to match hypershift
+- ROSAENG-68169 | feat: include imds knob support for nps
+- ROSAENG-68177: feat: expose capabilities via mirror type
+- [ROSAENG-68125] | feat(api): add Spot node pools with optional interruption queue
+- ROSAENG-65211 | chore: Enable windowsLI for v2
+
+
 ## 0.1.22 Oct 16 2026
 
 - feat: add resettable pathbind updates
