@@ -211,8 +211,9 @@ var _ = BeforeSuite(func() {
 	manifestStatusEvents := make(chan event.GenericEvent, 256)
 
 	Expect((&controller.PlacementReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:       mgr.GetClient(),
+		Scheme:       mgr.GetScheme(),
+		HCPSlotCount: 60,
 	}).SetupWithManager(mgr)).To(Succeed())
 
 	Expect((&controller.DNSReservationReconciler{

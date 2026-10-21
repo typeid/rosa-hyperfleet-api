@@ -2,6 +2,8 @@ package render
 
 import (
 	"fmt"
+	"strings"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -13,7 +15,58 @@ const (
 	resourceTypeLabel = "seaplane.io/resource-type"
 	managedByLabel    = "seaplane.io/managed-by"
 	managedByOperator = "seaplane-operator"
+
+	// HCPSlotLabel names the hosted control plane slot, zero-padded ("07"), on
+	// the slot's subnets, NodePool and nodes, and on the HostedClusters placed
+	// on it. HyperShift's ControlPlaneAutoscalingConfiguration on the MC only
+	// autoscales HostedClusters with this label.
+	HCPSlotLabel = "seaplane.io/hcp-slot"
+	// hcpWarmupLabel is set on a HostedCluster while HCPOptions.Warmup is true;
+	// the MC's autoscaling configuration raises its control plane's minimum
+	// requests while VPA has no usage history yet.
+	hcpWarmupLabel = "seaplane.io/hcp-warmup"
+	// controlPlaneNodeLabel marks the nodes HyperShift control plane pods run on.
+	controlPlaneNodeLabel = "hypershift.openshift.io/control-plane"
 )
+
+// HCPWarmupPeriod is how long after the Cluster's creation its HostedCluster
+// carries the warm-up label.
+const HCPWarmupPeriod = 48 * time.Hour
+
+// InHCPWarmup reports whether a Cluster created at created is still in its
+// warm-up period at now.
+func InHCPWarmup(created, now time.Time) bool {
+	return now.Before(created.Add(HCPWarmupPeriod))
+}
+
+// HCPOptions are the per-Cluster settings for running its hosted control
+// plane: the slot it runs in (from its Placement) and whether it's still in
+// its warm-up period (from the Cluster's age). The cluster controller sets both.
+type HCPOptions struct {
+	// Slot is the Placement's HCP slot (spec.hcpSlot). Every placed Cluster has
+	// one. 0 means the slot is unknown, which only happens when deletion runs
+	// again after the Placement is gone; the slot resources are then left out,
+	// their desires having been handled on the first pass.
+	Slot int32
+	// Warmup sets the warm-up label on the HostedCluster (see InHCPWarmup).
+	Warmup bool
+}
+
+// MaxHCPSlots is the most slots a management cluster can have, so that every
+// slot name is two digits.
+const MaxHCPSlots = 99
+
+// HCPSlotName is a slot's name in labels and resource names: its number
+// zero-padded to two digits, matching Terraform and the hcp-slots chart.
+func HCPSlotName(slot int32) string {
+	return fmt.Sprintf("%02d", slot)
+}
+
+// hostedControlPlaneNamespace is the namespace HyperShift creates for a
+// HostedCluster's control plane (hypershift pkg/manifests.HostedControlPlaneNamespace).
+func hostedControlPlaneNamespace(hostedClusterNamespace, hostedClusterName string) string {
+	return fmt.Sprintf("%s-%s", hostedClusterNamespace, strings.ReplaceAll(hostedClusterName, ".", "-"))
+}
 
 // HostedClusterName resolves the internal management-cluster name persisted
 // by the platform API or operator. Legacy and automatic-DNS Clusters fall back
@@ -50,6 +103,10 @@ type Resource struct {
 	Name      string
 	Namespace string
 	Object    any
+	// RetainOnDelete marks a resource that HyperShift deletes itself with the
+	// HostedCluster. On Cluster deletion its ApplyDesire is removed, so
+	// kube-applier stops applying it, instead of being turned into a Delete.
+	RetainOnDelete bool
 }
 
 // ManagementNamespace returns the namespace used for a Cluster's resources on

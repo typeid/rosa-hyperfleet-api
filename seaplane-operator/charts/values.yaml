@@ -7,6 +7,10 @@ image:
 
 awsRegion: ""
 baseDomain: ""
+# Hosted control plane slots on every management cluster, and so the most
+# Clusters one holds (must match the MCs' Terraform and hcp-slots chart). Each
+# Cluster is placed on a free slot. Required, 1 to 99.
+hcpSlotCount: null
 
 # Optional regional Alertmanager base URL for lifecycle silence reconciliation.
 # When unset, the silence reconciler is not started.

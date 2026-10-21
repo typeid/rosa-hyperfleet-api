@@ -20,9 +20,10 @@ import (
 
 // ClusterResources generates the Kubernetes resources for a cluster on the MC.
 // baseDomain is the fully assembled DNS base domain from the DNSReservation
-// (e.g. "f7a3.0.openshiftapps.com").
+// (e.g. "f7a3.0.openshiftapps.com"). hcp sets the hosted control plane's slot
+// and warm-up.
 func ClusterResources(cluster *seaplanev1alpha1.Cluster, oidcSigningKeyExternal bool,
-	baseDomain, controlPlaneOperatorImage string) ([]Resource, error) {
+	baseDomain, controlPlaneOperatorImage string, hcp HCPOptions) ([]Resource, error) {
 	clusterID, ns, err := managementClusterIdentity(cluster)
 	if err != nil {
 		return nil, err
@@ -33,7 +34,7 @@ func ClusterResources(cluster *seaplanev1alpha1.Cluster, oidcSigningKeyExternal 
 		return nil, fmt.Errorf("cluster %s/%s has no valid HostedCluster name", cluster.Namespace, cluster.Name)
 	}
 
-	hc, err := hostedCluster(cluster, clusterID, ns, hostedClusterName, oidcSigningKeyExternal, baseDomain, controlPlaneOperatorImage)
+	hc, err := hostedCluster(cluster, clusterID, ns, hostedClusterName, oidcSigningKeyExternal, baseDomain, controlPlaneOperatorImage, hcp)
 	if err != nil {
 		return nil, err
 	}
@@ -52,6 +53,10 @@ func ClusterResources(cluster *seaplanev1alpha1.Cluster, oidcSigningKeyExternal 
 
 	if oidcSigningKeyExternal {
 		resources = append(resources, oidcSigningKeySecret(cluster.Spec.AccountID, cluster.Spec.OidcConfigID, clusterID, ns))
+	}
+
+	if hcp.Slot > 0 {
+		resources = append(resources, hcpSlotResources(clusterID, hostedControlPlaneNamespace(ns, hostedClusterName), HCPSlotName(hcp.Slot))...)
 	}
 
 	return resources, nil
@@ -218,7 +223,7 @@ func apiServingCert(clusterID, hostedClusterName, baseDomain, ns string) Resourc
 }
 
 func hostedCluster(cluster *seaplanev1alpha1.Cluster, clusterID, ns, hostedClusterName string, oidcSigningKeyExternal bool,
-	baseDomain, controlPlaneOperatorImage string) (Resource, error) {
+	baseDomain, controlPlaneOperatorImage string, hcp HCPOptions) (Resource, error) {
 	clusterName := cluster.Name // customer-facing identity
 	apiHost := fmt.Sprintf("api.%s.%s", hostedClusterName, baseDomain)
 
@@ -305,6 +310,11 @@ func hostedCluster(cluster *seaplanev1alpha1.Cluster, clusterID, ns, hostedClust
 		annotations[hypershiftv1beta1.ControlPlaneOperatorImageAnnotation] = controlPlaneOperatorImage
 	}
 
+	labels := clusterLabels(clusterID)
+	if hcp.Slot > 0 {
+		placeOnHCPSlot(hcSpec, labels, annotations, hostedControlPlaneNamespace(ns, hostedClusterName), hcp)
+	}
+
 	return Resource{
 		Group: "hypershift.openshift.io", Version: "v1beta1", Resource: "hostedclusters",
 		Name: hostedClusterName, Namespace: ns,
@@ -316,12 +326,29 @@ func hostedCluster(cluster *seaplanev1alpha1.Cluster, clusterID, ns, hostedClust
 			ObjectMeta: metav1.ObjectMeta{
 				Name:        hostedClusterName,
 				Namespace:   ns,
-				Labels:      clusterLabels(clusterID),
+				Labels:      labels,
 				Annotations: annotations,
 			},
 			Spec: *hcSpec,
 		},
 	}, nil
+}
+
+// placeOnHCPSlot runs every control plane pod on nodes of the Cluster's HCP
+// slot, and only of this control plane: the slot's NodePool labels its nodes
+// with the slot, and Karpenter labels each node with the control plane
+// namespace the pending pods select. The router's NLB registers only those
+// nodes, so no other control plane's nodes carry this one's traffic. The slot
+// label opts the HostedCluster into the MC's control plane autoscaling.
+func placeOnHCPSlot(hcSpec *hypershiftv1beta1.HostedClusterSpec, labels, annotations map[string]string,
+	hcpNamespace string, hcp HCPOptions) {
+	slot := HCPSlotName(hcp.Slot)
+	hcSpec.NodeSelector = hcpNodeSelector(hcpNamespace, slot)
+	annotations[hypershiftv1beta1.AWSLoadBalancerTargetNodesAnnotation] = hypershiftv1beta1.HostedClusterLabel + "=" + hcpNamespace
+	labels[HCPSlotLabel] = slot
+	if hcp.Warmup {
+		labels[hcpWarmupLabel] = "true"
+	}
 }
 
 func servicePublishingStrategies(hostedClusterName, baseDomain string) []hypershiftv1beta1.ServicePublishingStrategyMapping {

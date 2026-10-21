@@ -62,6 +62,18 @@ spec:
                   is for.
                 minLength: 1
                 type: string
+              hcpSlot:
+                description: |-
+                  HCPSlot is the hosted control plane slot on the management cluster that
+                  holds this Cluster's control plane: its own subnets, NACL, node role and
+                  Karpenter NodePool, never shared with another control plane. Slots are
+                  numbered 1 to 99; the slot's resources and its seaplane.io/hcp-slot label
+                  use the number zero-padded to two digits (slot 7 is "07"). It can't be
+                  changed once set.
+                format: int32
+                maximum: 99
+                minimum: 1
+                type: integer
               managementCluster:
                 description: ManagementCluster is the target management cluster ID
                   (e.g. mc01).
@@ -69,11 +81,14 @@ spec:
                 type: string
             required:
             - clusterName
+            - hcpSlot
             - managementCluster
             type: object
             x-kubernetes-validations:
             - message: spec.clusterName is immutable
               rule: self.clusterName == oldSelf.clusterName
+            - message: spec.hcpSlot is immutable
+              rule: self.hcpSlot == oldSelf.hcpSlot
           status:
             description: PlacementStatus defines the observed state of a Placement.
             properties:

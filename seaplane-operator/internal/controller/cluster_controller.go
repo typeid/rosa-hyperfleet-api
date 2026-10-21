@@ -457,7 +457,11 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("resolve oidc signing key mode: %w", err)
 	}
-	resources, err := render.ClusterResources(&cluster, oidcSigningKeyExternal, baseDomain, r.RegionalConfig.ControlPlaneOperatorImage)
+	hcp := render.HCPOptions{
+		Slot:   placement.Spec.HCPSlot,
+		Warmup: render.InHCPWarmup(cluster.CreationTimestamp.Time, time.Now()),
+	}
+	resources, err := render.ClusterResources(&cluster, oidcSigningKeyExternal, baseDomain, r.RegionalConfig.ControlPlaneOperatorImage, hcp)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("render cluster resources: %w", err)
 	}
@@ -576,17 +580,21 @@ func (r *ClusterReconciler) reconcileDelete(ctx context.Context, cluster *seapla
 	log.Info("Cluster deleting", "cluster", cluster.Name)
 	r.setPhase(ctx, cluster, seaplanev1alpha1.ClusterPhaseDeleting)
 
-	// Resolve the management cluster. If none is set, no resources were ever
-	// placed, so skip straight to Placement/finalizer cleanup.
+	// Resolve the management cluster and HCP slot. If no management cluster is
+	// set, no resources were ever placed, so skip straight to Placement/finalizer
+	// cleanup.
 	mc := ""
+	var hcpSlot int32
+	placementName := fmt.Sprintf("%s.placement", cluster.Name)
+	var placement seaplanev1alpha1.Placement
+	if err := r.Get(ctx, types.NamespacedName{Namespace: cluster.Namespace, Name: placementName}, &placement); err == nil {
+		mc = placement.Spec.ManagementCluster
+		hcpSlot = placement.Spec.HCPSlot
+	} else if !apierrors.IsNotFound(err) {
+		return ctrl.Result{}, fmt.Errorf("get placement: %w", err)
+	}
 	if cluster.Status.PlacementRef != nil {
 		mc = cluster.Status.PlacementRef.ManagementCluster
-	} else {
-		placementName := fmt.Sprintf("%s.placement", cluster.Name)
-		var placement seaplanev1alpha1.Placement
-		if err := r.Get(ctx, types.NamespacedName{Namespace: cluster.Namespace, Name: placementName}, &placement); err == nil {
-			mc = placement.Spec.ManagementCluster
-		}
 	}
 	if mc == "" {
 		return r.cleanupAndRemoveFinalizer(ctx, cluster)
@@ -626,12 +634,29 @@ func (r *ClusterReconciler) reconcileDelete(ctx context.Context, cluster *seapla
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("resolve oidc signing key mode: %w", err)
 	}
-	resources, err := render.ClusterResources(cluster, oidcSigningKeyExternal, baseDomain, r.RegionalConfig.ControlPlaneOperatorImage)
+	// The slot decides which resources exist; the rest of the placement
+	// doesn't matter for deletion.
+	resources, err := render.ClusterResources(cluster, oidcSigningKeyExternal, baseDomain, r.RegionalConfig.ControlPlaneOperatorImage, render.HCPOptions{Slot: hcpSlot})
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("render cluster resources: %w", err)
 	}
 
-	// Switch all 7 ApplyDesires to Type=Delete in-place, using the same
+	// Resources HyperShift deletes with the HostedCluster (the control plane
+	// namespace) aren't deleted here; their ApplyDesires are removed first so
+	// kube-applier doesn't recreate them after HyperShift deletes them.
+	var deleteResources []render.Resource
+	for _, m := range resources {
+		if !m.RetainOnDelete {
+			deleteResources = append(deleteResources, m)
+			continue
+		}
+		docID := dynamo.NewDocumentID(taskKey, m.Group, m.Version, m.Resource, m.Namespace, m.Name)
+		if err := r.Dynamo.DeleteDesireSpec(ctx, specsPrefix, "-applydesires", docID); err != nil {
+			return ctrl.Result{}, fmt.Errorf("remove ApplyDesire for %s %s: %w", m.Resource, m.Name, err)
+		}
+	}
+
+	// Switch the remaining ApplyDesires to Type=Delete in-place, using the same
 	// taskKey and documentID as the original SSA desires. kube-applier
 	// sees a MODIFY stream event per resource and deletes each one from
 	// the MC instead of re-applying it.
@@ -639,9 +664,9 @@ func (r *ClusterReconciler) reconcileDelete(ctx context.Context, cluster *seapla
 		entry DesireStatusEntry
 		err   error
 	}
-	upsertResults := make([]upsertResult, len(resources))
+	upsertResults := make([]upsertResult, len(deleteResources))
 	var wg sync.WaitGroup
-	for i, m := range resources {
+	for i, m := range deleteResources {
 		wg.Add(1)
 		go func(idx int, m render.Resource) {
 			defer wg.Done()
@@ -729,6 +754,14 @@ func (r *ClusterReconciler) cleanupAndRemoveFinalizer(ctx context.Context, clust
 			}
 		}
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
+
+	// Release the Cluster's HCP slot. Its HostedCluster is gone from the MC by
+	// now (or was never created), so the next Cluster placed on the slot can't
+	// share nodes with this one's control plane; its now-empty nodes are removed
+	// by Karpenter.
+	if err := releaseHCPSlotClaims(ctx, r.Client, cluster.UID, nil); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	var placements seaplanev1alpha1.PlacementList

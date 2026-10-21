@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -42,6 +43,7 @@ var _ = Describe("Placement Controller", func() {
 
 		BeforeEach(func() {
 			ensureNamespace(ctx, testNS)
+			ensureNamespace(ctx, hcpSlotNamespace(mcName))
 			mc := &seaplanev1alpha1.ManagementCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: mcName},
 				Spec: seaplanev1alpha1.ManagementClusterSpec{
@@ -66,6 +68,7 @@ var _ = Describe("Placement Controller", func() {
 			if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: clusterName + ".placement"}, placement); err == nil {
 				_ = k8sClient.Delete(ctx, placement)
 			}
+			_ = k8sClient.DeleteAllOf(ctx, &seaplanev1alpha1.Index{}, client.InNamespace(hcpSlotNamespace(mcName)))
 		})
 
 		It("should create a Placement for a new Cluster", func() {
@@ -73,8 +76,9 @@ var _ = Describe("Placement Controller", func() {
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 
 			reconciler := &PlacementReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Client:       k8sClient,
+				Scheme:       k8sClient.Scheme(),
+				HCPSlotCount: 60,
 			}
 
 			_, err := reconciler.Reconcile(ctx, reconcile.Request{
@@ -94,8 +98,9 @@ var _ = Describe("Placement Controller", func() {
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 
 			reconciler := &PlacementReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Client:       k8sClient,
+				Scheme:       k8sClient.Scheme(),
+				HCPSlotCount: 60,
 			}
 
 			_, err := reconciler.Reconcile(ctx, reconcile.Request{

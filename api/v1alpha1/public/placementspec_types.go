@@ -4,6 +4,7 @@ package public
 
 // PlacementSpec defines the desired placement of a Cluster on a management cluster.
 // +kubebuilder:validation:XValidation:rule="self.clusterName == oldSelf.clusterName",message="spec.clusterName is immutable"
+// +kubebuilder:validation:XValidation:rule="self.hcpSlot == oldSelf.hcpSlot",message="spec.hcpSlot is immutable"
 type PlacementSpec struct {
 	// ClusterName is the name of the Cluster CR this placement is for.
 	// +kubebuilder:validation:MinLength=1
@@ -11,4 +12,13 @@ type PlacementSpec struct {
 	// ManagementCluster is the target management cluster ID (e.g. mc01).
 	// +kubebuilder:validation:MinLength=1
 	ManagementCluster string `json:"managementCluster"`
+	// HCPSlot is the hosted control plane slot on the management cluster that
+	// holds this Cluster's control plane: its own subnets, NACL, node role and
+	// Karpenter NodePool, never shared with another control plane. Slots are
+	// numbered 1 to 99; the slot's resources and its seaplane.io/hcp-slot label
+	// use the number zero-padded to two digits (slot 7 is "07"). It can't be
+	// changed once set.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=99
+	HCPSlot int32 `json:"hcpSlot"`
 }

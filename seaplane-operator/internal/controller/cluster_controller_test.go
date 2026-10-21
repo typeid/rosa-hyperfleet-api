@@ -452,6 +452,7 @@ var _ = Describe("Cluster Controller", func() {
 				Spec: seaplanev1alpha1.PlacementSpec{
 					ClusterName:       clusterName,
 					ManagementCluster: "mc01",
+					HCPSlot:           1,
 				},
 			}
 			Expect(k8sClient.Create(ctx, placement)).To(Succeed())
@@ -477,8 +478,9 @@ var _ = Describe("Cluster Controller", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			// 6 cluster manifests → 6 ApplyDesires + 1 ReadDesire.
-			Expect(fd.applyCount).To(Equal(6))
+			// 6 cluster manifests and 3 slot resources (control plane namespace,
+			// buffer PodTemplate and CapacityBuffer) → 9 ApplyDesires + 1 ReadDesire.
+			Expect(fd.applyCount).To(Equal(9))
 			Expect(fd.readCount).To(Equal(1))
 			Expect(fd.reads[0].Spec.TargetItem.Name).To(Equal(render.HostedClusterName(resource)))
 		})
@@ -511,6 +513,7 @@ var _ = Describe("Cluster Controller", func() {
 				Spec: seaplanev1alpha1.PlacementSpec{
 					ClusterName:       clusterName,
 					ManagementCluster: "mc01",
+					HCPSlot:           1,
 				},
 			}
 			Expect(k8sClient.Create(ctx, placement)).To(Succeed())
@@ -537,12 +540,12 @@ var _ = Describe("Cluster Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// 7 cluster manifests (6 base + oidc-signing-key ExternalSecret)
-			// → 7 ApplyDesires + 1 ReadDesire.
-			Expect(fd.applyCount).To(Equal(7))
+			// plus the 3 slot resources → 10 ApplyDesires + 1 ReadDesire.
+			Expect(fd.applyCount).To(Equal(10))
 			Expect(fd.readCount).To(Equal(1))
 		})
 
-		It("should switch all 6 desires to Type=Delete in-place, wait for confirmation, then remove finalizer", func() {
+		It("should switch the desires to Type=Delete in-place, wait for confirmation, then remove finalizer", func() {
 			resource := newTestCluster(clusterName)
 			Expect(createTestClusterWithReservation(ctx, resource)).To(Succeed())
 
@@ -556,6 +559,7 @@ var _ = Describe("Cluster Controller", func() {
 				Spec: seaplanev1alpha1.PlacementSpec{
 					ClusterName:       clusterName,
 					ManagementCluster: "mc01",
+					HCPSlot:           1,
 				},
 			}
 			Expect(k8sClient.Create(ctx, placement)).To(Succeed())
@@ -586,14 +590,15 @@ var _ = Describe("Cluster Controller", func() {
 			// Delete the CR — sets DeletionTimestamp.
 			Expect(k8sClient.Delete(ctx, &updated)).To(Succeed())
 
-			// First deletion reconcile: switches all 6 desires to Type=Delete
+			// First deletion reconcile: switches 8 desires (all but the control
+			// plane namespace's, which is removed instead) to Type=Delete
 			// in-place; no status yet → requeues.
 			result, err := reconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: types.NamespacedName{Namespace: testNS, Name: clusterName},
 			})
 			Expect(err).NotTo(HaveOccurred())
 			deleteApplies := filterDeleteDesires(fd.applies)
-			Expect(deleteApplies).To(HaveLen(6), "all 6 resources should be switched to Type=Delete")
+			Expect(deleteApplies).To(HaveLen(8), "8 resources should be switched to Type=Delete")
 			Expect(result.RequeueAfter).NotTo(BeZero(), "should requeue while waiting for deletion confirmation")
 
 			// Placement should still exist (finalizer not removed yet).
@@ -616,7 +621,7 @@ var _ = Describe("Cluster Controller", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 			deleteApplies = filterDeleteDesires(fd.applies)
-			Expect(deleteApplies).To(HaveLen(12), "6 desires re-upserted on second pass")
+			Expect(deleteApplies).To(HaveLen(16), "8 desires re-upserted on second pass")
 			Expect(result.RequeueAfter).NotTo(BeZero(), "should requeue while resources still terminating")
 
 			// Simulate all resources fully deleted (Successful=True).
@@ -628,24 +633,84 @@ var _ = Describe("Cluster Controller", func() {
 				}},
 			}
 
-			// Third deletion reconcile: all 6 confirmed deleted → cleans up
+			// Third deletion reconcile: all 8 confirmed deleted → cleans up
 			// desire specs and ReadDesire, deletes Placement, removes finalizer.
 			_, err = reconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: types.NamespacedName{Namespace: testNS, Name: clusterName},
 			})
 			Expect(err).NotTo(HaveOccurred())
 			deleteApplies = filterDeleteDesires(fd.applies)
-			Expect(deleteApplies).To(HaveLen(18), "6 desires re-upserted on third pass")
+			Expect(deleteApplies).To(HaveLen(24), "8 desires re-upserted on third pass")
 
 			// Verify the Placement was deleted.
 			err = k8sClient.Get(ctx, types.NamespacedName{Namespace: testNS, Name: clusterName + ".placement"}, &p)
 			Expect(err).To(HaveOccurred())
 
-			// Verify desire specs were cleaned up once at the end (not on every pass).
-			// 6 ApplyDesire cleanups + 1 ReadDesire cleanup.
+			// Verify desire specs were cleaned up once at the end (not on every pass),
+			// except the control plane namespace's, which every pass removes first:
+			// 9 ApplyDesire cleanups at the end + 3 namespace removals, and 1
+			// ReadDesire cleanup.
 			applyCleanups, readCleanups := fd.countSpecCleanups()
-			Expect(applyCleanups).To(Equal(6), "should clean up all 6 ApplyDesire specs once deletion confirmed")
+			Expect(applyCleanups).To(Equal(12), "should clean up all 9 ApplyDesire specs once deletion confirmed")
 			Expect(readCleanups).To(Equal(1), "should clean up ReadDesire spec")
+		})
+
+		It("should delete a slotted cluster's buffer but only stop applying its control plane namespace", func() {
+			resource := newTestCluster(clusterName)
+			Expect(createTestClusterWithReservation(ctx, resource)).To(Succeed())
+
+			placement := &seaplanev1alpha1.Placement{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      clusterName + ".placement",
+					Namespace: testNS,
+					Labels:    map[string]string{clusterUIDLabel: string(resource.UID)},
+				},
+				Spec: seaplanev1alpha1.PlacementSpec{
+					ClusterName:       clusterName,
+					ManagementCluster: "mc01",
+					HCPSlot:           7,
+				},
+			}
+			Expect(k8sClient.Create(ctx, placement)).To(Succeed())
+
+			fd := &fakeDynamo{}
+			reconciler := &ClusterReconciler{
+				Client:         k8sClient,
+				Scheme:         k8sClient.Scheme(),
+				Dynamo:         fd,
+				RegionalConfig: render.RegionalConfig{BaseDomainSuffix: "example.com", AWSRegion: "us-east-1"},
+			}
+			req := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: testNS, Name: clusterName}}
+
+			// First reconcile: adds finalizer.
+			_, err := reconciler.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated seaplanev1alpha1.Cluster
+			Expect(k8sClient.Get(ctx, req.NamespacedName, &updated)).To(Succeed())
+			updated.Status.PlacementRef = &seaplanev1alpha1.PlacementReference{
+				Name:              clusterName + ".placement",
+				ManagementCluster: "mc01",
+			}
+			Expect(k8sClient.Status().Update(ctx, &updated)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &updated)).To(Succeed())
+
+			_, err = reconciler.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+
+			hcpNamespace := render.ManagementNamespace(string(updated.UID)) + "-" + clusterName
+			deleted := map[string]bool{}
+			for _, d := range filterDeleteDesires(fd.applies) {
+				deleted[d.Spec.TargetItem.Resource+"/"+d.Spec.TargetItem.Name] = true
+			}
+			Expect(deleted).To(HaveLen(8), "6 cluster resources plus the buffer's PodTemplate and CapacityBuffer")
+			Expect(deleted).To(HaveKey("podtemplates/hcp-capacity-buffer"))
+			Expect(deleted).To(HaveKey("capacitybuffers/hcp-capacity-buffer"))
+			Expect(deleted).NotTo(HaveKey("namespaces/"+hcpNamespace), "HyperShift deletes the control plane namespace")
+
+			nsDocID := dynamo.NewDocumentID(taskKey, "", "v1", "namespaces", "", hcpNamespace)
+			Expect(fd.deletedSpecs).To(ContainElement("-applydesires/"+nsDocID),
+				"the control plane namespace's ApplyDesire is removed so kube-applier doesn't recreate it")
 		})
 
 		It("should propagate HC status feedback and set Phase=Ready", func() {
@@ -661,6 +726,7 @@ var _ = Describe("Cluster Controller", func() {
 				Spec: seaplanev1alpha1.PlacementSpec{
 					ClusterName:       clusterName,
 					ManagementCluster: "mc01",
+					HCPSlot:           1,
 				},
 			}
 			Expect(k8sClient.Create(ctx, placement)).To(Succeed())
@@ -745,6 +811,7 @@ var _ = Describe("Cluster Controller", func() {
 				Spec: seaplanev1alpha1.PlacementSpec{
 					ClusterName:       clusterName,
 					ManagementCluster: "mc01",
+					HCPSlot:           1,
 				},
 			}
 			Expect(k8sClient.Create(ctx, placement)).To(Succeed())
@@ -839,6 +906,7 @@ var _ = Describe("Cluster Controller", func() {
 				Spec: seaplanev1alpha1.PlacementSpec{
 					ClusterName:       clusterName,
 					ManagementCluster: "mc01",
+					HCPSlot:           1,
 				},
 			}
 			Expect(k8sClient.Create(ctx, placement)).To(Succeed())

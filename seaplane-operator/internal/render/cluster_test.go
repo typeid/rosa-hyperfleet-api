@@ -1,8 +1,10 @@
 package render
 
 import (
+	"maps"
 	"slices"
 	"testing"
+	"time"
 
 	k8svalidation "k8s.io/apimachinery/pkg/util/validation"
 
@@ -66,7 +68,7 @@ func testCluster() *seaplanev1alpha1.Cluster {
 }
 
 func TestClusterResourcesPreservesProxyConfiguration(t *testing.T) {
-	resources, err := ClusterResources(testCluster(), false, "f7a3.0.example.com", "")
+	resources, err := ClusterResources(testCluster(), false, "f7a3.0.example.com", "", HCPOptions{})
 	if err != nil {
 		t.Fatalf("ClusterResources: %v", err)
 	}
@@ -103,7 +105,7 @@ func testClusterWithOidcConfig() *seaplanev1alpha1.Cluster {
 }
 
 func TestClusterResourcesCount(t *testing.T) {
-	resources, err := ClusterResources(testCluster(), false, "f7a3.0.example.com", "")
+	resources, err := ClusterResources(testCluster(), false, "f7a3.0.example.com", "", HCPOptions{})
 	if err != nil {
 		t.Fatalf("ClusterResources: %v", err)
 	}
@@ -113,7 +115,7 @@ func TestClusterResourcesCount(t *testing.T) {
 }
 
 func TestClusterResourcesTypes(t *testing.T) {
-	resources, err := ClusterResources(testCluster(), false, "f7a3.0.example.com", "")
+	resources, err := ClusterResources(testCluster(), false, "f7a3.0.example.com", "", HCPOptions{})
 	if err != nil {
 		t.Fatalf("ClusterResources: %v", err)
 	}
@@ -147,7 +149,7 @@ func TestClusterResourcesDecoupleHostedClusterNameFromCustomerName(t *testing.T)
 	cluster.Spec.HostedClusterName = seaplanev1alpha1.HostedClusterNameFromDNSReservation(&seaplanev1alpha1.DNSReservation{
 		ObjectMeta: metav1.ObjectMeta{UID: "550e8400-e29b-41d4-a716-446655440000"},
 	})
-	resources, err := ClusterResources(cluster, false, "f7a3.0.example.com", "")
+	resources, err := ClusterResources(cluster, false, "f7a3.0.example.com", "", HCPOptions{})
 	if err != nil {
 		t.Fatalf("ClusterResources: %v", err)
 	}
@@ -233,7 +235,7 @@ func TestLongCustomerNameUsesHostedClusterNameForAPIOAuthAndCertificateDNS(t *te
 	cluster.Spec.DNSReservationID = string(reservation.UID)
 	cluster.Spec.HostedClusterName = seaplanev1alpha1.HostedClusterNameFromDNSReservation(reservation)
 
-	resources, err := ClusterResources(cluster, false, "f7a3.0.example.com", "")
+	resources, err := ClusterResources(cluster, false, "f7a3.0.example.com", "", HCPOptions{})
 	if err != nil {
 		t.Fatalf("ClusterResources: %v", err)
 	}
@@ -286,7 +288,7 @@ func TestLongCustomerNameUsesHostedClusterNameForAPIOAuthAndCertificateDNS(t *te
 
 func TestClusterResourcesRenderIntoUIDManagementNamespace(t *testing.T) {
 	cluster := testCluster()
-	resources, err := ClusterResources(cluster, false, "f7a3.0.example.com", "")
+	resources, err := ClusterResources(cluster, false, "f7a3.0.example.com", "", HCPOptions{})
 	if err != nil {
 		t.Fatalf("ClusterResources: %v", err)
 	}
@@ -309,7 +311,7 @@ func TestClusterResourcesRenderIntoUIDManagementNamespace(t *testing.T) {
 // ExternalSecret and ServiceAccountSigningKey reference are rendered when the
 // referenced OidcConfig is type=unmanaged (oidcSigningKeyExternal=true).
 func TestClusterResourcesWithOidcConfig(t *testing.T) {
-	resources, err := ClusterResources(testClusterWithOidcConfig(), true, "f7a3.0.example.com", "")
+	resources, err := ClusterResources(testClusterWithOidcConfig(), true, "f7a3.0.example.com", "", HCPOptions{})
 	if err != nil {
 		t.Fatalf("ClusterResources: %v", err)
 	}
@@ -348,7 +350,7 @@ func TestClusterResourcesWithOidcConfig(t *testing.T) {
 // TestClusterResourcesWithoutOidcConfig_NoExternalSecret verifies the legacy
 // path renders no OIDC signing key ExternalSecret.
 func TestClusterResourcesWithoutOidcConfig_NoExternalSecret(t *testing.T) {
-	resources, err := ClusterResources(testCluster(), false, "f7a3.0.example.com", "")
+	resources, err := ClusterResources(testCluster(), false, "f7a3.0.example.com", "", HCPOptions{})
 	if err != nil {
 		t.Fatalf("ClusterResources: %v", err)
 	}
@@ -378,7 +380,7 @@ func TestClusterResourcesWithoutOidcConfig_NoExternalSecret(t *testing.T) {
 // no ExternalSecret/ServiceAccountSigningKey, since managed configs don't
 // store a signing key in Secrets Manager for ESO to deliver.
 func TestClusterResourcesWithManagedOidcConfig_NoExternalSecret(t *testing.T) {
-	resources, err := ClusterResources(testClusterWithOidcConfig(), false, "f7a3.0.example.com", "")
+	resources, err := ClusterResources(testClusterWithOidcConfig(), false, "f7a3.0.example.com", "", HCPOptions{})
 	if err != nil {
 		t.Fatalf("ClusterResources: %v", err)
 	}
@@ -411,7 +413,7 @@ func TestClusterResourcesClearsStaleServiceAccountSigningKey(t *testing.T) {
 	cluster := testCluster()
 	cluster.Spec.HostedCluster.ServiceAccountSigningKey = &corev1.LocalObjectReference{Name: "stale-key"}
 
-	resources, err := ClusterResources(cluster, false, "f7a3.0.example.com", "")
+	resources, err := ClusterResources(cluster, false, "f7a3.0.example.com", "", HCPOptions{})
 	if err != nil {
 		t.Fatalf("ClusterResources: %v", err)
 	}
@@ -432,7 +434,7 @@ func TestClusterResourcesClearsStaleServiceAccountSigningKey(t *testing.T) {
 }
 
 func TestHostedClusterDNS(t *testing.T) {
-	resources, err := ClusterResources(testCluster(), false, "f7a3.0.example.com", "")
+	resources, err := ClusterResources(testCluster(), false, "f7a3.0.example.com", "", HCPOptions{})
 	if err != nil {
 		t.Fatalf("ClusterResources: %v", err)
 	}
@@ -506,7 +508,7 @@ func TestHostedClusterInfraIDManagedOidcConfig(t *testing.T) {
 	cluster := testClusterWithOidcConfig()
 	cluster.Spec.HostedCluster.IssuerURL = "https://oidc.example.com/2130539814aa400396a3f3b860e04a1c"
 
-	resources, err := ClusterResources(cluster, false, "f7a3.0.example.com", "")
+	resources, err := ClusterResources(cluster, false, "f7a3.0.example.com", "", HCPOptions{})
 	if err != nil {
 		t.Fatalf("ClusterResources: %v", err)
 	}
@@ -524,7 +526,7 @@ func TestHostedClusterInfraIDUnmanagedOidcConfig(t *testing.T) {
 	cluster := testClusterWithOidcConfig()
 	cluster.Spec.HostedCluster.IssuerURL = "https://customer-idp.example.com/some/arbitrary/path"
 
-	resources, err := ClusterResources(cluster, true, "f7a3.0.example.com", "")
+	resources, err := ClusterResources(cluster, true, "f7a3.0.example.com", "", HCPOptions{})
 	if err != nil {
 		t.Fatalf("ClusterResources: %v", err)
 	}
@@ -552,7 +554,7 @@ func hostedClusterFrom(t *testing.T, resources []Resource) *hypershiftv1beta1.Ho
 // test if one was not produced.
 func renderHostedCluster(t *testing.T, cluster *seaplanev1alpha1.Cluster) *hypershiftv1beta1.HostedCluster {
 	t.Helper()
-	resources, err := ClusterResources(cluster, false, "f7a3.0.example.com", "")
+	resources, err := ClusterResources(cluster, false, "f7a3.0.example.com", "", HCPOptions{})
 	if err != nil {
 		t.Fatalf("ClusterResources: %v", err)
 	}
@@ -564,7 +566,7 @@ func renderHostedCluster(t *testing.T, cluster *seaplanev1alpha1.Cluster) *hyper
 func TestHostedClusterControlPlaneOperatorImageAnnotation(t *testing.T) {
 	const cpoImage = "quay.io/me/hypershift:pr-1234"
 
-	resources, err := ClusterResources(testCluster(), false, "f7a3.0.example.com", cpoImage)
+	resources, err := ClusterResources(testCluster(), false, "f7a3.0.example.com", cpoImage, HCPOptions{})
 	if err != nil {
 		t.Fatalf("ClusterResources: %v", err)
 	}
@@ -573,7 +575,7 @@ func TestHostedClusterControlPlaneOperatorImageAnnotation(t *testing.T) {
 		t.Errorf("CPO annotation = %q, want %q", got, cpoImage)
 	}
 
-	resources, err = ClusterResources(testCluster(), false, "f7a3.0.example.com", "")
+	resources, err = ClusterResources(testCluster(), false, "f7a3.0.example.com", "", HCPOptions{})
 	if err != nil {
 		t.Fatalf("ClusterResources: %v", err)
 	}
@@ -701,5 +703,196 @@ func TestHostedClusterCustomerTagsYieldToPassthroughTags(t *testing.T) {
 	}
 	if got := tagPairs(tags)["environment"]; got != "service-managed" {
 		t.Errorf("environment = %q, want %q", got, "service-managed")
+	}
+}
+
+func renderOnHCPSlot(t *testing.T, cluster *seaplanev1alpha1.Cluster, hcp HCPOptions) *hypershiftv1beta1.HostedCluster {
+	t.Helper()
+	resources, err := ClusterResources(cluster, false, "f7a3.0.example.com", "", hcp)
+	if err != nil {
+		t.Fatalf("ClusterResources: %v", err)
+	}
+	return hostedClusterFrom(t, resources)
+}
+
+// TestHostedClusterOnHCPSlot verifies a slotted cluster's control plane is
+// pinned to its own slot and nodes, its NLB targets only those nodes, and it
+// opts into control plane autoscaling.
+func TestHostedClusterOnHCPSlot(t *testing.T) {
+	cluster := testCluster()
+	created := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	cluster.CreationTimestamp = metav1.NewTime(created)
+	// HyperShift creates the control plane in <namespace>-<name>.
+	const hcpNamespace = "cluster-abc12345-my-cluster"
+
+	hc := renderOnHCPSlot(t, cluster, HCPOptions{Slot: 7, Warmup: true})
+
+	wantSelector := map[string]string{
+		"hypershift.openshift.io/control-plane": "true",
+		"hypershift.openshift.io/cluster":       hcpNamespace,
+		"seaplane.io/hcp-slot":                  "07",
+	}
+	if !maps.Equal(hc.Spec.NodeSelector, wantSelector) {
+		t.Errorf("nodeSelector = %v, want %v", hc.Spec.NodeSelector, wantSelector)
+	}
+	if got, want := hc.Annotations[hypershiftv1beta1.AWSLoadBalancerTargetNodesAnnotation], "hypershift.openshift.io/cluster="+hcpNamespace; got != want {
+		t.Errorf("NLB target node labels = %q, want %q", got, want)
+	}
+	if got := hc.Labels["seaplane.io/hcp-slot"]; got != "07" {
+		t.Errorf("slot label = %q, want %q", got, "07")
+	}
+	if got := hc.Labels["seaplane.io/hcp-warmup"]; got != "true" {
+		t.Errorf("warm-up label = %q, want %q within the warm-up period", got, "true")
+	}
+	if got := hc.Labels["seaplane.io/cluster-id"]; got != "abc12345" {
+		t.Errorf("cluster-id label = %q, want it kept alongside the slot labels", got)
+	}
+}
+
+func TestHostedClusterOnHCPSlotAfterWarmup(t *testing.T) {
+	cluster := testCluster()
+	created := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	cluster.CreationTimestamp = metav1.NewTime(created)
+
+	hc := renderOnHCPSlot(t, cluster, HCPOptions{Slot: 7})
+
+	if _, ok := hc.Labels["seaplane.io/hcp-warmup"]; ok {
+		t.Error("warm-up label should be removed once the warm-up period has passed")
+	}
+	if got := hc.Labels["seaplane.io/hcp-slot"]; got != "07" {
+		t.Errorf("slot label = %q, want %q after warm-up", got, "07")
+	}
+}
+
+// TestHostedClusterWithoutHCPSlot verifies rendering without a slot, which only
+// happens when deletion runs again after the Placement is gone, doesn't fail
+// and leaves out everything slot-specific.
+func TestHostedClusterWithoutHCPSlot(t *testing.T) {
+	cluster := testCluster()
+	cluster.CreationTimestamp = metav1.NewTime(time.Now())
+
+	hc := renderOnHCPSlot(t, cluster, HCPOptions{})
+
+	if hc.Spec.NodeSelector != nil {
+		t.Errorf("nodeSelector = %v, want none without a slot", hc.Spec.NodeSelector)
+	}
+	if _, ok := hc.Annotations[hypershiftv1beta1.AWSLoadBalancerTargetNodesAnnotation]; ok {
+		t.Error("NLB target node labels should be absent without a slot")
+	}
+	for _, label := range []string{"seaplane.io/hcp-slot", "seaplane.io/hcp-warmup"} {
+		if _, ok := hc.Labels[label]; ok {
+			t.Errorf("label %s should be absent without a slot", label)
+		}
+	}
+}
+
+func TestHCPSlotName(t *testing.T) {
+	for slot, want := range map[int32]string{1: "01", 9: "09", 60: "60", 99: "99"} {
+		if got := HCPSlotName(slot); got != want {
+			t.Errorf("HCPSlotName(%d) = %q, want %q", slot, got, want)
+		}
+	}
+}
+
+func TestHostedControlPlaneNamespaceReplacesDots(t *testing.T) {
+	if got, want := hostedControlPlaneNamespace("cluster-abc", "my.cluster"), "cluster-abc-my-cluster"; got != want {
+		t.Errorf("hostedControlPlaneNamespace = %q, want %q", got, want)
+	}
+}
+
+// TestHCPSlotResources verifies a slotted cluster also gets its control plane
+// namespace labeled with the slot, kept on deletion, and a capacity buffer
+// pinned to its own nodes, one chunk per zone.
+func TestHCPSlotResources(t *testing.T) {
+	cluster := testCluster()
+	cluster.CreationTimestamp = metav1.NewTime(time.Now())
+	const hcpNamespace = "cluster-abc12345-my-cluster"
+
+	resources, err := ClusterResources(cluster, false, "f7a3.0.example.com", "", HCPOptions{Slot: 7})
+	if err != nil {
+		t.Fatalf("ClusterResources: %v", err)
+	}
+	byKey := map[string]Resource{}
+	for _, r := range resources {
+		byKey[r.Resource+"/"+r.Namespace+"/"+r.Name] = r
+	}
+
+	nsRes, ok := byKey["namespaces//"+hcpNamespace]
+	if !ok {
+		t.Fatalf("control plane namespace %s not rendered", hcpNamespace)
+	}
+	if !nsRes.RetainOnDelete {
+		t.Error("control plane namespace must be retained on deletion; HyperShift deletes it")
+	}
+	if got := nsRes.Object.(*corev1.Namespace).Labels["seaplane.io/hcp-slot"]; got != "07" {
+		t.Errorf("control plane namespace slot label = %q, want %q", got, "07")
+	}
+
+	tmplRes, ok := byKey["podtemplates/"+hcpNamespace+"/hcp-capacity-buffer"]
+	if !ok {
+		t.Fatal("capacity buffer PodTemplate not rendered")
+	}
+	spec := tmplRes.Object.(*corev1.PodTemplate).Template.Spec
+	wantSelector := map[string]string{
+		"hypershift.openshift.io/control-plane": "true",
+		"hypershift.openshift.io/cluster":       hcpNamespace,
+		"seaplane.io/hcp-slot":                  "07",
+	}
+	if !maps.Equal(spec.NodeSelector, wantSelector) {
+		t.Errorf("buffer nodeSelector = %v, want %v", spec.NodeSelector, wantSelector)
+	}
+	if len(spec.TopologySpreadConstraints) != 1 || spec.TopologySpreadConstraints[0].TopologyKey != corev1.LabelTopologyZone {
+		t.Errorf("buffer topology spread = %v, want one constraint on the zone", spec.TopologySpreadConstraints)
+	}
+
+	bufRes, ok := byKey["capacitybuffers/"+hcpNamespace+"/hcp-capacity-buffer"]
+	if !ok {
+		t.Fatal("CapacityBuffer not rendered")
+	}
+	if bufRes.Group != "autoscaling.x-k8s.io" || bufRes.Version != "v1beta1" {
+		t.Errorf("CapacityBuffer GV = %s/%s, want autoscaling.x-k8s.io/v1beta1", bufRes.Group, bufRes.Version)
+	}
+	buf := bufRes.Object.(*CapacityBuffer)
+	if buf.Spec.PodTemplateRef.Name != "hcp-capacity-buffer" || buf.Spec.Replicas == nil || *buf.Spec.Replicas != 3 {
+		t.Errorf("CapacityBuffer spec = %+v, want the PodTemplate and 3 chunks", buf.Spec)
+	}
+
+	for _, r := range resources {
+		if r.RetainOnDelete && r.Name != hcpNamespace {
+			t.Errorf("%s %s retained on deletion; only the control plane namespace should be", r.Resource, r.Name)
+		}
+	}
+}
+
+// TestNoHCPSlotResourcesWithoutSlot verifies an unknown slot renders no slot
+// resources (see TestHostedClusterWithoutHCPSlot).
+func TestNoHCPSlotResourcesWithoutSlot(t *testing.T) {
+	resources, err := ClusterResources(testCluster(), false, "f7a3.0.example.com", "", HCPOptions{})
+	if err != nil {
+		t.Fatalf("ClusterResources: %v", err)
+	}
+	for _, r := range resources {
+		if r.Resource == "podtemplates" || r.Resource == "capacitybuffers" || r.RetainOnDelete {
+			t.Errorf("unexpected %s %s/%s without a slot", r.Resource, r.Namespace, r.Name)
+		}
+	}
+}
+
+func TestInHCPWarmup(t *testing.T) {
+	created := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name string
+		now  time.Time
+		want bool
+	}{
+		{"just created", created, true},
+		{"an hour in", created.Add(time.Hour), true},
+		{"just before the end", created.Add(HCPWarmupPeriod - time.Second), true},
+		{"at the end", created.Add(HCPWarmupPeriod), false},
+		{"after", created.Add(72 * time.Hour), false},
+	} {
+		if got := InHCPWarmup(created, tc.now); got != tc.want {
+			t.Errorf("%s: InHCPWarmup = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }

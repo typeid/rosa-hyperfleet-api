@@ -42,12 +42,16 @@ type PlacementReconciler struct {
 	client.Client
 	Scheme                  *runtime.Scheme
 	MaxConcurrentReconciles int
+	// HCPSlotCount is the number of HCP slots on every management cluster,
+	// which is its capacity: one Cluster per slot.
+	HCPSlotCount int
 }
 
 // +kubebuilder:rbac:groups=seaplane.io,resources=clusters,verbs=get;list;watch
 // +kubebuilder:rbac:groups=seaplane.io,resources=clusters/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=seaplane.io,resources=placements,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=seaplane.io,resources=placements/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=seaplane.io,resources=indices,verbs=get;list;watch;create;delete
 
 func (r *PlacementReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
@@ -71,34 +75,15 @@ func (r *PlacementReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	if apierrors.IsNotFound(err) {
-		mc, err := r.selectManagementCluster(ctx)
+		created, err := r.place(ctx, &cluster, placementName)
 		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("select management cluster: %w", err)
+			return ctrl.Result{}, err
 		}
-		log.Info("Creating Placement for Cluster", "cluster", cluster.Name, "mc", mc)
-		placement = seaplanev1alpha1.Placement{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      placementName,
-				Namespace: cluster.Namespace,
-				Labels: map[string]string{
-					clusterUIDLabel: string(cluster.UID),
-				},
-			},
-			Spec: seaplanev1alpha1.PlacementSpec{
-				ClusterName:       cluster.Name,
-				ManagementCluster: mc,
-			},
+		if created == nil {
+			// Nothing was placed this time; the next reconcile sees why.
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 		}
-		if err := controllerutil.SetControllerReference(&cluster, &placement, r.Scheme); err != nil {
-			return ctrl.Result{}, fmt.Errorf("set Placement ownerReference: %w", err)
-		}
-		if err := r.Create(ctx, &placement); err != nil {
-			if apierrors.IsAlreadyExists(err) {
-				// The Create failed, so no watch event is emitted; requeue explicitly.
-				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
-			}
-			return ctrl.Result{}, fmt.Errorf("create placement: %w", err)
-		}
+		placement = *created
 	}
 
 	// Ensure Placement status is Bound.
@@ -155,19 +140,115 @@ func (r *PlacementReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	return ctrl.Result{}, nil
 }
 
-// TODO: Implement proper MC scheduling (least-loaded, capacity-aware, affinity).
-func (r *PlacementReconciler) selectManagementCluster(ctx context.Context) (string, error) {
-	var list seaplanev1alpha1.ManagementClusterList
-	if err := r.List(ctx, &list); err != nil {
-		return "", fmt.Errorf("list management clusters: %w", err)
+// place claims a slot for the Cluster on a management cluster and writes its
+// Placement. It returns nil, with nothing claimed, when the Cluster was deleted
+// meanwhile or another placement attempt (for example an operator replica
+// while shard ownership moves when the replica count changes) wrote the
+// Placement first.
+func (r *PlacementReconciler) place(ctx context.Context, cluster *seaplanev1alpha1.Cluster, placementName string) (*seaplanev1alpha1.Placement, error) {
+	mc, slot, err := r.selectManagementCluster(ctx, cluster)
+	if err != nil {
+		return nil, fmt.Errorf("select management cluster: %w", err)
 	}
-	for i := range list.Items {
-		// Skip fake MCs created by e2e tests.
-		if !strings.HasPrefix(list.Items[i].Name, "test-mc") {
-			return list.Items[i].Name, nil
+
+	// Claims carry no owner reference: if the Cluster was deleted while the
+	// slot was claimed, its cleanup may already have run, so release it here.
+	var latest seaplanev1alpha1.Cluster
+	err = r.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return nil, fmt.Errorf("recheck cluster after claiming HCP slot: %w", err)
+	}
+	if apierrors.IsNotFound(err) || latest.UID != cluster.UID || !latest.DeletionTimestamp.IsZero() {
+		return nil, releaseHCPSlotClaims(ctx, r.Client, cluster.UID, nil)
+	}
+
+	logf.FromContext(ctx).Info("Creating Placement for Cluster", "cluster", cluster.Name, "mc", mc, "hcpSlot", slot)
+	placement := &seaplanev1alpha1.Placement{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      placementName,
+			Namespace: cluster.Namespace,
+			Labels: map[string]string{
+				clusterUIDLabel: string(cluster.UID),
+			},
+		},
+		Spec: seaplanev1alpha1.PlacementSpec{
+			ClusterName:       cluster.Name,
+			ManagementCluster: mc,
+			HCPSlot:           slot,
+		},
+	}
+	if err := controllerutil.SetControllerReference(cluster, placement, r.Scheme); err != nil {
+		return nil, fmt.Errorf("set Placement ownerReference: %w", err)
+	}
+	if err := r.Create(ctx, placement); err != nil {
+		if !apierrors.IsAlreadyExists(err) {
+			return nil, fmt.Errorf("create placement: %w", err)
+		}
+		// Another attempt placed the Cluster first: keep only the slot its
+		// Placement uses.
+		var existing seaplanev1alpha1.Placement
+		if err := r.Get(ctx, client.ObjectKeyFromObject(placement), &existing); err != nil {
+			return nil, fmt.Errorf("get existing placement: %w", err)
+		}
+		return nil, releaseHCPSlotClaims(ctx, r.Client, cluster.UID, &existing.Spec)
+	}
+	// Extra claims only appear while a Cluster is being placed, so this is the
+	// one place to release them.
+	if err := releaseHCPSlotClaims(ctx, r.Client, cluster.UID, &placement.Spec); err != nil {
+		return nil, err
+	}
+	return placement, nil
+}
+
+// selectManagementCluster picks a management cluster for the Cluster and claims
+// a free slot on it. A slot the Cluster already holds, from an attempt that
+// stopped before writing the Placement, is reused.
+func (r *PlacementReconciler) selectManagementCluster(ctx context.Context, cluster *seaplanev1alpha1.Cluster) (string, int32, error) {
+	claims, err := ownedHCPSlotClaims(ctx, r.Client, cluster.UID)
+	if err != nil {
+		return "", 0, err
+	}
+	if len(claims) > 0 {
+		return claims[0].managementCluster, claims[0].slot, nil
+	}
+
+	candidates, err := r.candidateManagementClusters(ctx)
+	if err != nil {
+		return "", 0, err
+	}
+	if len(candidates) == 0 {
+		return "", 0, fmt.Errorf("no management clusters configured")
+	}
+	for _, mc := range candidates {
+		slot, err := r.claimHCPSlot(ctx, cluster, mc)
+		if err != nil {
+			return "", 0, err
+		}
+		if slot > 0 {
+			return mc, slot, nil
 		}
 	}
-	return "", fmt.Errorf("no management clusters configured")
+	return "", 0, fmt.Errorf("no management cluster has a free HCP slot")
+}
+
+// candidateManagementClusters returns the management clusters to place a
+// Cluster on, in the order to try them. A management cluster's capacity is its
+// slots, so it is full when every slot is claimed.
+// TODO: least utilized first: order by claimed slots, fewest first.
+func (r *PlacementReconciler) candidateManagementClusters(ctx context.Context) ([]string, error) {
+	var list seaplanev1alpha1.ManagementClusterList
+	if err := r.List(ctx, &list); err != nil {
+		return nil, fmt.Errorf("list management clusters: %w", err)
+	}
+	var candidates []string
+	for i := range list.Items {
+		// Skip fake MCs created by e2e tests.
+		if strings.HasPrefix(list.Items[i].Name, "test-mc") {
+			continue
+		}
+		candidates = append(candidates, list.Items[i].Name)
+	}
+	return candidates, nil
 }
 
 func (r *PlacementReconciler) SetupWithManager(mgr ctrl.Manager) error {

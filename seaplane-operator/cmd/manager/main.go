@@ -58,6 +58,7 @@ func main() {
 	var watcherPollInterval time.Duration
 	var watcherRelistInterval time.Duration
 	var watcherMaxLookback time.Duration
+	var hcpSlotCount int
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metrics endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -73,6 +74,9 @@ func main() {
 		"Maximum lookback window for the GSI fast poller (0 defaults to --dynamo-relist-interval).")
 
 	opts := zap.Options{Development: true}
+	flag.IntVar(&hcpSlotCount, "hcp-slot-count", 0,
+		"Hosted control plane slots on every management cluster, and so the most Clusters one holds. "+
+			"Each Cluster is placed on a free slot; management clusters without a free slot aren't chosen. Required, 1 to 99.")
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
@@ -84,6 +88,10 @@ func main() {
 	}
 	if baseDomain == "" {
 		setupLog.Error(nil, "--base-domain is required")
+		os.Exit(1)
+	}
+	if hcpSlotCount < 1 || hcpSlotCount > render.MaxHCPSlots {
+		setupLog.Error(nil, "--hcp-slot-count is out of range", "value", hcpSlotCount, "min", 1, "max", render.MaxHCPSlots)
 		os.Exit(1)
 	}
 
@@ -194,6 +202,7 @@ func main() {
 		Client:                  mgr.GetClient(),
 		Scheme:                  mgr.GetScheme(),
 		MaxConcurrentReconciles: maxConcurrentReconciles,
+		HCPSlotCount:            hcpSlotCount,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "placement")
 		os.Exit(1)
