@@ -478,9 +478,9 @@ var _ = Describe("Cluster Controller", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			// 6 cluster manifests and 3 slot resources (control plane namespace,
-			// buffer PodTemplate and CapacityBuffer) → 9 ApplyDesires + 1 ReadDesire.
-			Expect(fd.applyCount).To(Equal(9))
+			// 6 cluster manifests; the slot feature adds no objects (only the
+			// HostedCluster node selector) → 6 ApplyDesires + 1 ReadDesire.
+			Expect(fd.applyCount).To(Equal(6))
 			Expect(fd.readCount).To(Equal(1))
 			Expect(fd.reads[0].Spec.TargetItem.Name).To(Equal(render.HostedClusterName(resource)))
 		})
@@ -655,7 +655,7 @@ var _ = Describe("Cluster Controller", func() {
 			Expect(readCleanups).To(Equal(1), "should clean up ReadDesire spec")
 		})
 
-		It("should delete a slotted cluster's buffer but only stop applying its control plane namespace", func() {
+		It("should render no control plane namespace or buffer for a slotted cluster", func() {
 			resource := newTestCluster(clusterName)
 			Expect(createTestClusterWithReservation(ctx, resource)).To(Succeed())
 
@@ -703,14 +703,12 @@ var _ = Describe("Cluster Controller", func() {
 			for _, d := range filterDeleteDesires(fd.applies) {
 				deleted[d.Spec.TargetItem.Resource+"/"+d.Spec.TargetItem.Name] = true
 			}
-			Expect(deleted).To(HaveLen(8), "6 cluster resources plus the buffer's PodTemplate and CapacityBuffer")
-			Expect(deleted).To(HaveKey("podtemplates/hcp-capacity-buffer"))
-			Expect(deleted).To(HaveKey("capacitybuffers/hcp-capacity-buffer"))
-			Expect(deleted).NotTo(HaveKey("namespaces/"+hcpNamespace), "HyperShift deletes the control plane namespace")
+			Expect(deleted).To(HaveLen(6), "6 cluster resources; the slot feature adds no objects")
+			Expect(deleted).NotTo(HaveKey("namespaces/"+hcpNamespace), "HyperShift owns the control plane namespace; seaplane never creates it")
 
 			nsDocID := dynamo.NewDocumentID(taskKey, "", "v1", "namespaces", "", hcpNamespace)
-			Expect(fd.deletedSpecs).To(ContainElement("-applydesires/"+nsDocID),
-				"the control plane namespace's ApplyDesire is removed so kube-applier doesn't recreate it")
+			Expect(fd.deletedSpecs).NotTo(ContainElement("-applydesires/"+nsDocID),
+				"seaplane never created the control plane namespace, so there is no ApplyDesire to remove")
 		})
 
 		It("should propagate HC status feedback and set Phase=Ready", func() {

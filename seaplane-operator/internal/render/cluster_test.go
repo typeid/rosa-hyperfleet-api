@@ -800,9 +800,9 @@ func TestHostedControlPlaneNamespaceReplacesDots(t *testing.T) {
 	}
 }
 
-// TestHCPSlotResources verifies a slotted cluster also gets its control plane
-// namespace labeled with the slot, kept on deletion, and a capacity buffer
-// pinned to its own nodes, one chunk per zone.
+// TestHCPSlotResources verifies a slotted cluster renders no extra objects: the
+// slot feature only sets the node selector on the HostedCluster (see
+// TestHostedClusterOnHCPSlot). HyperShift owns the control plane namespace.
 func TestHCPSlotResources(t *testing.T) {
 	cluster := testCluster()
 	cluster.CreationTimestamp = metav1.NewTime(time.Now())
@@ -812,68 +812,15 @@ func TestHCPSlotResources(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ClusterResources: %v", err)
 	}
-	byKey := map[string]Resource{}
 	for _, r := range resources {
-		byKey[r.Resource+"/"+r.Namespace+"/"+r.Name] = r
-	}
-
-	nsRes, ok := byKey["namespaces//"+hcpNamespace]
-	if !ok {
-		t.Fatalf("control plane namespace %s not rendered", hcpNamespace)
-	}
-	if !nsRes.RetainOnDelete {
-		t.Error("control plane namespace must be retained on deletion; HyperShift deletes it")
-	}
-	if got := nsRes.Object.(*corev1.Namespace).Labels["seaplane.io/hcp-slot"]; got != "07" {
-		t.Errorf("control plane namespace slot label = %q, want %q", got, "07")
-	}
-
-	tmplRes, ok := byKey["podtemplates/"+hcpNamespace+"/hcp-capacity-buffer"]
-	if !ok {
-		t.Fatal("capacity buffer PodTemplate not rendered")
-	}
-	spec := tmplRes.Object.(*corev1.PodTemplate).Template.Spec
-	wantSelector := map[string]string{
-		"hypershift.openshift.io/control-plane": "true",
-		"hypershift.openshift.io/cluster":       hcpNamespace,
-		"seaplane.io/hcp-slot":                  "07",
-	}
-	if !maps.Equal(spec.NodeSelector, wantSelector) {
-		t.Errorf("buffer nodeSelector = %v, want %v", spec.NodeSelector, wantSelector)
-	}
-	if len(spec.TopologySpreadConstraints) != 1 || spec.TopologySpreadConstraints[0].TopologyKey != corev1.LabelTopologyZone {
-		t.Errorf("buffer topology spread = %v, want one constraint on the zone", spec.TopologySpreadConstraints)
-	}
-
-	bufRes, ok := byKey["capacitybuffers/"+hcpNamespace+"/hcp-capacity-buffer"]
-	if !ok {
-		t.Fatal("CapacityBuffer not rendered")
-	}
-	if bufRes.Group != "autoscaling.x-k8s.io" || bufRes.Version != "v1beta1" {
-		t.Errorf("CapacityBuffer GV = %s/%s, want autoscaling.x-k8s.io/v1beta1", bufRes.Group, bufRes.Version)
-	}
-	buf := bufRes.Object.(*CapacityBuffer)
-	if buf.Spec.PodTemplateRef.Name != "hcp-capacity-buffer" || buf.Spec.Replicas == nil || *buf.Spec.Replicas != 3 {
-		t.Errorf("CapacityBuffer spec = %+v, want the PodTemplate and 3 chunks", buf.Spec)
-	}
-
-	for _, r := range resources {
-		if r.RetainOnDelete && r.Name != hcpNamespace {
-			t.Errorf("%s %s retained on deletion; only the control plane namespace should be", r.Resource, r.Name)
+		if r.Resource == "namespaces" && r.Name == hcpNamespace {
+			t.Errorf("seaplane must not render the control plane namespace %s; HyperShift owns it", hcpNamespace)
 		}
-	}
-}
-
-// TestNoHCPSlotResourcesWithoutSlot verifies an unknown slot renders no slot
-// resources (see TestHostedClusterWithoutHCPSlot).
-func TestNoHCPSlotResourcesWithoutSlot(t *testing.T) {
-	resources, err := ClusterResources(testCluster(), false, "f7a3.0.example.com", "", HCPOptions{})
-	if err != nil {
-		t.Fatalf("ClusterResources: %v", err)
-	}
-	for _, r := range resources {
-		if r.Resource == "podtemplates" || r.Resource == "capacitybuffers" || r.RetainOnDelete {
-			t.Errorf("unexpected %s %s/%s without a slot", r.Resource, r.Namespace, r.Name)
+		if r.Resource == "podtemplates" || r.Resource == "capacitybuffers" {
+			t.Errorf("unexpected %s %s/%s; the slot feature renders only the HostedCluster node selector", r.Resource, r.Namespace, r.Name)
+		}
+		if r.RetainOnDelete {
+			t.Errorf("unexpected retained resource %s %s/%s", r.Resource, r.Namespace, r.Name)
 		}
 	}
 }

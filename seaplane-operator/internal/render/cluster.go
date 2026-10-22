@@ -55,10 +55,6 @@ func ClusterResources(cluster *seaplanev1alpha1.Cluster, oidcSigningKeyExternal 
 		resources = append(resources, oidcSigningKeySecret(cluster.Spec.AccountID, cluster.Spec.OidcConfigID, clusterID, ns))
 	}
 
-	if hcp.Slot > 0 {
-		resources = append(resources, hcpSlotResources(clusterID, hostedControlPlaneNamespace(ns, hostedClusterName), HCPSlotName(hcp.Slot))...)
-	}
-
 	return resources, nil
 }
 
@@ -348,6 +344,19 @@ func placeOnHCPSlot(hcSpec *hypershiftv1beta1.HostedClusterSpec, labels, annotat
 	labels[HCPSlotLabel] = slot
 	if hcp.Warmup {
 		labels[hcpWarmupLabel] = "true"
+	}
+}
+
+// hcpNodeSelector selects the nodes of one control plane in its slot: the
+// slot's NodePool sets the control plane and slot labels, and Karpenter sets
+// the cluster label from what the pending pods select. It is set on the
+// HostedCluster (spec.nodeSelector); the slot feature renders no other objects —
+// HyperShift owns the control plane namespace and its pods.
+func hcpNodeSelector(hcpNamespace, slot string) map[string]string {
+	return map[string]string{
+		controlPlaneNodeLabel:                "true",
+		hypershiftv1beta1.HostedClusterLabel: hcpNamespace,
+		HCPSlotLabel:                         slot,
 	}
 }
 
